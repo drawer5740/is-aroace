@@ -40,7 +40,15 @@
 
     <h2>5. Sharing</h2>
     <p>Account and request details may be visible to authorized service administrators who review requests and maintain the service. Information is sent to the providers described above when required to provide the service. Information may also be disclosed when reasonably necessary to address abuse, protect rights or safety, or comply with a lawful request. The operator should not sell personal information.</p>
+<h2>Administrator access and operational actions</h2>
+<p>Authorized administrators can view subdomain request information, including the requested name, applicant email address, request status, and assigned subdomains. Administrators can also view and change DNS records for approved subdomains, including subdomains assigned to other users. They may delete a subdomain assignment and its associated DNS records when needed to operate, secure, or maintain the service.</p>
+<p>Administrative actions may be logged by the application or its service providers for security, troubleshooting, and accountability. Access to administrative functions is restricted through account roles and server-side permission checks.</p>
 
+<h2>DNS information and visibility</h2>
+<p>DNS record names, types, values, and TTL settings are processed by the service and deSEC to provide DNS management. DNS records are generally public by design. Do not use DNS records to store passwords, private keys, access tokens, personal messages, or other confidential information.</p>
+
+<h2>Deletion of subdomains</h2>
+<p>When a subdomain is deleted by its owner or an authorized administrator, the service attempts to remove DNS records beneath that subdomain and delete its assignment record. The parent domain and unrelated subdomains are not intended to be removed. Some copies of information may remain temporarily in provider backups, logs, or security records under the applicable retention practices of those providers.</p>
     <h2>6. Retention and deletion</h2>
     <p>Information is kept for as long as needed to operate accounts, review requests, manage subdomain assignments, maintain security, resolve disputes, and meet legal obligations. Deleting an account or subdomain may remove application records and DNS records as described in the service. Backups, provider logs, and security records may persist for a limited period according to provider retention practices.</p>
 

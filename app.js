@@ -534,305 +534,316 @@
       </section>`;
   }
 
-  function renderDNSSettings() {
-    const isAdmin = state.role === "admin";
-    const approved = state.requests.filter((item) =>
-      item.status === "approved" && (isAdmin || item.user_id === state.user.id)
-    );
+function renderDNSSettings() {
+  const isAdmin = state.role === "admin";
+  const approved = state.requests.filter((item) =>
+    item.status === "approved" && (isAdmin || item.user_id === state.user.id)
+  );
+  const myDomains = approved.filter((item) => item.user_id === state.user.id);
+  const otherDomains = isAdmin
+    ? approved.filter((item) => item.user_id !== state.user.id)
+    : [];
 
-    app.innerHTML = `
-      <div class="page-heading">
-        <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
-        <h1>DNS records</h1>
-        <p class="lede">
-          ${isAdmin
-            ? "Manage DNS records for every approved subdomain. You can also remove a subdomain and its DNS records."
-            : "Add and edit A, AAAA, CNAME, MX, TXT, SRV, and CAA records for your approved subdomains."}
-          DNS is managed here—no external nameserver setup is needed.
-        </p>
-      </div>
-
-      ${approved.length
-        ? `<div class="domain-settings-list">${approved.map((request) => `
-          <section class="domain-card" data-domain-card data-request-id="${escapeHTML(request.id)}">
-            <div class="domain-card-heading">
-              <div>
-                <p class="eyebrow">${isAdmin
-                  ? `OWNER: ${escapeHTML(request.email || request.applicant_name || "Unknown")}`
-                  : "APPROVED SUBDOMAIN"}</p>
-                <h2>${escapeHTML(request.requested_label)}.${escapeHTML(rootDomain)}</h2>
-              </div>
-              <span class="status status-approved">Approved</span>
+  const renderDomainGroup = (domains) => `
+    ${domains.length
+      ? `<div class="domain-settings-list">${domains.map((request) => `
+        <section class="domain-card" data-domain-card data-request-id="${escapeHTML(request.id)}">
+          <div class="domain-card-heading">
+            <div>
+              <p class="eyebrow">${isAdmin
+                ? `OWNER: ${escapeHTML(request.email || request.applicant_name || "Unknown")}`
+                : "APPROVED SUBDOMAIN"}</p>
+              <h2>${escapeHTML(request.requested_label)}.${escapeHTML(rootDomain)}</h2>
             </div>
+            <span class="status status-approved">Approved</span>
+          </div>
 
-            ${isAdmin ? `
-              <div class="actions" style="margin:0 0 12px">
-                <button class="button button-danger button-small"
-                  type="button" data-admin-delete-domain="${escapeHTML(request.id)}">
-                  Delete subdomain and all its DNS
-                </button>
-              </div>` : ""}
+          ${isAdmin ? `
+            <div class="actions" style="margin:0 0 12px">
+              <button class="button button-danger button-small"
+                type="button" data-admin-delete-domain="${escapeHTML(request.id)}">
+                Delete subdomain and all its DNS
+              </button>
+            </div>` : ""}
 
-            <p class="small">Use <code>@</code> for this subdomain itself, or a name like <code>www</code>, <code>mail</code>, or <code>_acme-challenge</code> for a record beneath it.</p>
+          <p class="small">Use <code>@</code> for this subdomain itself, or a name like <code>www</code>, <code>mail</code>, or <code>_acme-challenge</code> for a record beneath it.</p>
 
-            <div class="legacy-ns-warning hidden" data-legacy-warning>
-              We found an old NS delegation for this subdomain. Saving a DNS record below will remove that delegation so records can be managed here.
-            </div>
+          <div class="legacy-ns-warning hidden" data-legacy-warning>
+            We found an old NS delegation for this subdomain. Saving a DNS record below will remove that delegation so records can be managed here.
+          </div>
 
-            <div class="record-list" data-record-list>
-              <p class="small">Loading DNS records…</p>
-            </div>
+          <div class="record-list" data-record-list>
+            <p class="small">Loading DNS records…</p>
+          </div>
 
-            <form class="record-form" data-record-form>
-              <h3>Add or replace a record</h3>
-              <div class="record-form-grid">
-                <div class="field">
-                  <label>Host</label>
-                  <input name="recordName" value="@" required maxlength="253" placeholder="@ or www">
-                  <span class="field-hint">Relative to this subdomain.</span>
-                </div>
-
-                <div class="field">
-                  <label>Type</label>
-                  <select name="type">
-                    ${supportedTypes.map((type) => `<option value="${type}">${type}</option>`).join("")}
-                  </select>
-                </div>
-
-                <div class="field">
-                  <label>TTL (seconds)</label>
-                  <input name="ttl" type="number" min="60" max="86400" step="60" value="3600" required>
-                </div>
-              </div>
-
+          <form class="record-form" data-record-form>
+            <h3>Add or replace a record</h3>
+            <div class="record-form-grid">
               <div class="field">
-                <label>Record value(s)</label>
-                <textarea name="records" rows="3" required spellcheck="false" placeholder="One value per line"></textarea>
-                <span class="field-hint" data-type-help>${dnsRecordTypeHelp("A")}</span>
+                <label>Host</label>
+                <input name="recordName" value="@" required maxlength="253" placeholder="@ or www">
+                <span class="field-hint">Relative to this subdomain.</span>
               </div>
-
-              <div class="actions">
-                <button class="button button-primary" type="submit">Save DNS record</button>
-                <span class="small" data-record-result aria-live="polite"></span>
+              <div class="field">
+                <label>Type</label>
+                <select name="type">
+                  ${supportedTypes.map((type) => `<option value="${type}">${type}</option>`).join("")}
+                </select>
               </div>
-            </form>
-          </section>
-        `).join("")}</div>`
-        : isAdmin
-          ? `<section class="empty-state">
-               <h2>No approved subdomains</h2>
-               <p>There are currently no approved subdomains to manage.</p>
-             </section>`
-          : `<section class="empty-state">
-               <h2>No approved subdomains yet</h2>
-               <p>Your DNS editor appears here after an administrator approves one of your requests.</p>
-               <button class="button button-primary" id="request-first-domain">Request a subdomain</button>
-             </section>`}
-    `;
-
-    const requestFirst = app.querySelector("#request-first-domain");
-    requestFirst?.addEventListener("click", () => {
-      state.section = "account";
-      renderCurrentView();
-    });
-
-    app.querySelectorAll("[data-domain-card]").forEach((card) => {
-      const requestId = card.dataset.requestId;
-      const request = approved.find((item) => item.id === requestId);
-      const recordsContainer = card.querySelector("[data-record-list]");
-      const warning = card.querySelector("[data-legacy-warning]");
-      const form = card.querySelector("[data-record-form]");
-      const help = form?.querySelector("[data-type-help]");
-      const typeSelect = form?.querySelector("[name='type']");
-      const result = form?.querySelector("[data-record-result]");
-
-      if (!request || !recordsContainer || !form || !typeSelect || !result) return;
-
-      let legacyNsFound = false;
-
-      const fullRecordHost = (host) => {
-        const relative = String(host || "@");
-        return relative === "@"
-          ? `${request.requested_label}.${rootDomain}`
-          : `${relative}.${request.requested_label}.${rootDomain}`;
-      };
-
-      typeSelect.addEventListener("change", () => {
-        if (help) help.textContent = dnsRecordTypeHelp(typeSelect.value);
-      });
-
-      const loadRecords = async () => {
-        recordsContainer.innerHTML = `<p class="small">Loading DNS records…</p>`;
-
-        const data = await invokeDnsFunction({ action: "get", requestId });
-        legacyNsFound = Boolean(data.legacyNsFound);
-
-        if (warning) {
-          warning.classList.toggle("hidden", !legacyNsFound);
-        }
-
-        const records = Array.isArray(data.records) ? data.records : [];
-
-        if (!records.length) {
-          recordsContainer.innerHTML = `<p class="empty compact-empty">No DNS records yet. Add your first one below.</p>`;
-          return;
-        }
-
-        recordsContainer.innerHTML = records.map((record) => `
-          <article class="record-row">
-            <div class="record-meta">
-              <span class="record-type">${escapeHTML(record.type)}</span>
-              <strong>${escapeHTML(fullRecordHost(record.host))}</strong>
-              <span class="small">TTL ${escapeHTML(record.ttl)}</span>
+              <div class="field">
+                <label>TTL (seconds)</label>
+                <input name="ttl" type="number" min="60" max="86400" step="60" value="3600" required>
+              </div>
             </div>
 
-            <pre class="record-values">${escapeHTML((record.records || []).join("\n"))}</pre>
+            <div class="field">
+              <label>Record value(s)</label>
+              <textarea name="records" rows="3" required spellcheck="false" placeholder="One value per line"></textarea>
+              <span class="field-hint" data-type-help>${dnsRecordTypeHelp("A")}</span>
+            </div>
 
-            <button class="button button-danger button-small"
-              data-delete-record
-              data-host="${escapeHTML(record.host)}"
-              data-type="${escapeHTML(record.type)}"
-              type="button">
-              Delete record set
-            </button>
-          </article>
-        `).join("");
+            <div class="actions">
+              <button class="button button-primary" type="submit">Save DNS record</button>
+              <span class="small" data-record-result aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+      `).join("")}</div>`
+      : `<p class="empty compact-empty">No approved subdomains in this section.</p>`}
+  `;
 
-        recordsContainer.querySelectorAll("[data-delete-record]").forEach((button) => {
-          button.addEventListener("click", async () => {
-            const host = button.dataset.host;
-            const type = button.dataset.type;
-            const displayHost = fullRecordHost(host);
+  app.innerHTML = `
+    <div class="page-heading">
+      <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
+      <h1>DNS records</h1>
+      <p class="lede">
+        ${isAdmin
+          ? "Manage DNS records for every approved subdomain. You can also remove a subdomain and its DNS records."
+          : "Add and edit A, AAAA, CNAME, MX, TXT, SRV, and CAA records for your approved subdomains."}
+        DNS is managed here—no external nameserver setup is needed.
+      </p>
+    </div>
 
-            if (!window.confirm(`Delete the ${type} record set for ${displayHost}?`)) return;
+    ${isAdmin ? `
+      <section class="section panel-section">
+        <h2>MY domains</h2>
+        ${renderDomainGroup(myDomains)}
+      </section>
 
-            button.disabled = true;
+      <hr class="rule">
 
-            try {
-              await invokeDnsFunction({
-                action: "delete",
-                requestId,
-                recordName: host,
-                type
-              });
+      <section class="section panel-section">
+        <h2>Others' domains</h2>
+        ${renderDomainGroup(otherDomains)}
+      </section>
+    ` : myDomains.length
+      ? renderDomainGroup(myDomains)
+      : `
+        <section class="empty-state">
+          <h2>No approved subdomains yet</h2>
+          <p>Your DNS editor appears here after an administrator approves one of your requests.</p>
+          <button class="button button-primary" id="request-first-domain">Request a subdomain</button>
+        </section>
+      `}
+  `;
 
-              showNotice(`${type} records deleted for ${displayHost}.`, "success");
-              await loadRecords();
-            } catch (error) {
-              showNotice(error.message || "Could not delete the record set.", "error");
-              button.disabled = false;
-            }
-          });
-        });
-      };
+  const requestFirst = app.querySelector("#request-first-domain");
+  requestFirst?.addEventListener("click", () => {
+    state.section = "account";
+    renderCurrentView();
+  });
 
-      loadRecords().catch((error) => {
-        recordsContainer.innerHTML = `<p class="inline-note">Could not load DNS records: ${escapeHTML(error.message || "Unknown error")}</p>`;
-      });
+  app.querySelectorAll("[data-domain-card]").forEach((card) => {
+    const requestId = card.dataset.requestId;
+    const request = approved.find((item) => item.id === requestId);
+    const recordsContainer = card.querySelector("[data-record-list]");
+    const warning = card.querySelector("[data-legacy-warning]");
+    const form = card.querySelector("[data-record-form]");
+    const help = form?.querySelector("[data-type-help]");
+    const typeSelect = form?.querySelector("[name='type']");
+    const result = form?.querySelector("[data-record-result]");
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
+    if (!request || !recordsContainer || !form || !typeSelect || !result) return;
 
-        const values = new FormData(form);
-        const recordName = String(values.get("recordName") || "@").trim().toLowerCase();
-        const type = String(values.get("type") || "A").toUpperCase();
-        const ttl = Number(values.get("ttl"));
-        const records = String(values.get("records") || "")
-          .split(/\r?\n/)
-          .map((entry) => entry.trim())
-          .filter(Boolean);
+    let legacyNsFound = false;
 
-        if (!recordName || recordName.length > 253) {
-          result.textContent = "Enter @ or a relative host name.";
-          return;
-        }
+    const fullRecordHost = (host) => {
+      const relative = String(host || "@");
+      return relative === "@"
+        ? `${request.requested_label}.${rootDomain}`
+        : `${relative}.${request.requested_label}.${rootDomain}`;
+    };
 
-        if (!supportedTypes.includes(type)) {
-          result.textContent = "That record type is not supported.";
-          return;
-        }
-
-        if (!Number.isInteger(ttl) || ttl < 60 || ttl > 86400) {
-          result.textContent = "TTL must be between 60 and 86400 seconds.";
-          return;
-        }
-
-        if (!records.length || records.length > 25 || records.some((entry) => entry.length > 1000)) {
-          result.textContent = "Enter between 1 and 25 record values, one per line.";
-          return;
-        }
-
-        const button = form.querySelector("button[type='submit']");
-        if (!button) return;
-
-        button.disabled = true;
-        result.textContent = legacyNsFound
-          ? "Switching from old NS delegation and saving…"
-          : "Saving to DNS…";
-
-        try {
-          await invokeDnsFunction({
-            action: "set",
-            requestId,
-            recordName,
-            type,
-            ttl,
-            records
-          });
-
-          form.querySelector("[name='records']").value = "";
-          result.textContent = "DNS record saved.";
-
-          showNotice(`Saved ${type} record for ${fullRecordHost(recordName)}.`, "success");
-
-          await loadRecords();
-        } catch (error) {
-          result.textContent = error.message || "Could not save the DNS record.";
-          showNotice(result.textContent, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-
-      const adminDelete = card.querySelector("[data-admin-delete-domain]");
-
-      adminDelete?.addEventListener("click", async () => {
-        if (!isAdmin) return;
-
-        const fullDomain = `${request.requested_label}.${rootDomain}`;
-
-        if (!window.confirm(
-          `ADMIN ACTION: Permanently delete ${fullDomain}, its DNS records, and its assignment? This cannot be undone.`
-        )) return;
-
-        const confirmation = window.prompt(
-          `Type DELETE ${request.requested_label} to confirm removal of ${fullDomain}.`
-        );
-
-        if (confirmation !== `DELETE ${request.requested_label}`) {
-          showNotice("Deletion cancelled.", "info");
-          return;
-        }
-
-        adminDelete.disabled = true;
-        adminDelete.textContent = "Deleting…";
-
-        try {
-          await invokeAccountFunction({
-            action: "delete-domain",
-            requestId
-          });
-
-          showNotice(`${fullDomain} and its DNS records were deleted.`, "success");
-          await renderCurrentView();
-        } catch (error) {
-          adminDelete.disabled = false;
-          adminDelete.textContent = "Delete subdomain and all its DNS";
-          showNotice(error.message || "Could not delete subdomain.", "error");
-        }
-      });
+    typeSelect.addEventListener("change", () => {
+      if (help) help.textContent = dnsRecordTypeHelp(typeSelect.value);
     });
-  }
+
+    const loadRecords = async () => {
+      recordsContainer.innerHTML = `<p class="small">Loading DNS records…</p>`;
+
+      const data = await invokeDnsFunction({ action: "get", requestId });
+      legacyNsFound = Boolean(data.legacyNsFound);
+
+      if (warning) warning.classList.toggle("hidden", !legacyNsFound);
+
+      const records = Array.isArray(data.records) ? data.records : [];
+
+      if (!records.length) {
+        recordsContainer.innerHTML = `<p class="empty compact-empty">No DNS records yet. Add your first one below.</p>`;
+        return;
+      }
+
+      recordsContainer.innerHTML = records.map((record) => `
+        <article class="record-row">
+          <div class="record-meta">
+            <span class="record-type">${escapeHTML(record.type)}</span>
+            <strong>${escapeHTML(fullRecordHost(record.host))}</strong>
+            <span class="small">TTL ${escapeHTML(record.ttl)}</span>
+          </div>
+          <pre class="record-values">${escapeHTML((record.records || []).join("\n"))}</pre>
+          <button class="button button-danger button-small"
+            data-delete-record
+            data-host="${escapeHTML(record.host)}"
+            data-type="${escapeHTML(record.type)}"
+            type="button">
+            Delete record set
+          </button>
+        </article>
+      `).join("");
+
+      recordsContainer.querySelectorAll("[data-delete-record]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const host = button.dataset.host;
+          const type = button.dataset.type;
+          const displayHost = fullRecordHost(host);
+
+          if (!window.confirm(`Delete the ${type} record set for ${displayHost}?`)) return;
+
+          button.disabled = true;
+
+          try {
+            await invokeDnsFunction({
+              action: "delete",
+              requestId,
+              recordName: host,
+              type
+            });
+
+            showNotice(`${type} records deleted for ${displayHost}.`, "success");
+            await loadRecords();
+          } catch (error) {
+            showNotice(error.message || "Could not delete the record set.", "error");
+            button.disabled = false;
+          }
+        });
+      });
+    };
+
+    loadRecords().catch((error) => {
+      recordsContainer.innerHTML = `
+        <p class="inline-note">
+          Could not load DNS records: ${escapeHTML(error.message || "Unknown error")}
+        </p>`;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const values = new FormData(form);
+      const recordName = String(values.get("recordName") || "@").trim().toLowerCase();
+      const type = String(values.get("type") || "A").toUpperCase();
+      const ttl = Number(values.get("ttl"));
+      const records = String(values.get("records") || "")
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      if (!recordName || recordName.length > 253) {
+        result.textContent = "Enter @ or a relative host name.";
+        return;
+      }
+
+      if (!supportedTypes.includes(type)) {
+        result.textContent = "That record type is not supported.";
+        return;
+      }
+
+      if (!Number.isInteger(ttl) || ttl < 60 || ttl > 86400) {
+        result.textContent = "TTL must be between 60 and 86400 seconds.";
+        return;
+      }
+
+      if (!records.length || records.length > 25 || records.some((entry) => entry.length > 1000)) {
+        result.textContent = "Enter between 1 and 25 record values, one per line.";
+        return;
+      }
+
+      const button = form.querySelector("button[type='submit']");
+      if (!button) return;
+
+      button.disabled = true;
+      result.textContent = legacyNsFound
+        ? "Switching from old NS delegation and saving…"
+        : "Saving to DNS…";
+
+      try {
+        await invokeDnsFunction({
+          action: "set",
+          requestId,
+          recordName,
+          type,
+          ttl,
+          records
+        });
+
+        form.querySelector("[name='records']").value = "";
+        result.textContent = "DNS record saved.";
+
+        showNotice(`Saved ${type} record for ${fullRecordHost(recordName)}.`, "success");
+        await loadRecords();
+      } catch (error) {
+        result.textContent = error.message || "Could not save the DNS record.";
+        showNotice(result.textContent, "error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    const adminDelete = card.querySelector("[data-admin-delete-domain]");
+
+    adminDelete?.addEventListener("click", async () => {
+      if (!isAdmin) return;
+
+      const fullDomain = `${request.requested_label}.${rootDomain}`;
+
+      if (!window.confirm(
+        `ADMIN ACTION: Permanently delete ${fullDomain}, its DNS records, and its assignment? This cannot be undone.`
+      )) return;
+
+      const confirmation = window.prompt(
+        `Type DELETE ${request.requested_label} to confirm removal of ${fullDomain}.`
+      );
+
+      if (confirmation !== `DELETE ${request.requested_label}`) {
+        showNotice("Deletion cancelled.", "info");
+        return;
+      }
+
+      adminDelete.disabled = true;
+      adminDelete.textContent = "Deleting…";
+
+      try {
+        await invokeAccountFunction({ action: "delete-domain", requestId });
+        showNotice(`${fullDomain} and its DNS records were deleted.`, "success");
+        await renderCurrentView();
+      } catch (error) {
+        adminDelete.disabled = false;
+        adminDelete.textContent = "Delete subdomain and all its DNS";
+        showNotice(error.message || "Could not delete subdomain.", "error");
+      }
+    });
+  });
+}
   async function invokeAccountFunction(body) {
     const { data, error } = await state.client.functions.invoke("account-management", { body });
     if (error) {

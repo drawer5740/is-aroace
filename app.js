@@ -117,10 +117,21 @@
       if (error) showNotice(error.message, "error");
     });
 
-    const links = state.role === "admin"
-      ? [{ id: "home", label: "Home" }, { id: "admin", label: "Applications" }, { id: "dns", label: "DNS records" }, { id: "info", label: "Info" }, { id: "account", label: "Account" }]
-      : [{ id: "home", label: "Home" }, { id: "dns", label: "DNS records" }, { id: "info", label: "Info" }, { id: "account", label: "Account" }];
-
+  const links = state.role === "admin"
+  ? [
+      { id: "home", label: "Home" },
+      { id: "admin", label: "Applications" },
+      { id: "dns", label: "DNS Records" },
+      { id: "others", label: "Others' DNS" },
+      { id: "info", label: "Info" },
+      { id: "account", label: "Account" }
+    ]
+  : [
+      { id: "home", label: "Home" },
+      { id: "dns", label: "DNS records" },
+      { id: "info", label: "Info" },
+      { id: "account", label: "Account" }
+    ];
     sidebar.innerHTML = `<nav class="nav-list" aria-label="Main navigation">${links.map((link) => `
       <button class="nav-button" data-section="${link.id}" aria-current="${state.section === link.id ? "page" : "false"}">${link.label}</button>
     `).join("")}</nav>`;
@@ -410,7 +421,7 @@
     let query = state.client.from("subdomain_requests")
       .select("id,user_id,applicant_name,email,requested_label,reason,preview_url,status,admin_note,reviewed_by,reviewed_at,created_at")
       .order("created_at", { ascending: false });
-    if (state.role !== "admin") query = query.eq("user_id", state.user.id);
+  if (state.role === "admin" && !["home", "admin", "dns", "others", "info", "account"].includes(state.section)) state.section = "admin";
     const { data, error } = await query;
     if (error) throw error;
     state.requests = data || [];
@@ -427,12 +438,12 @@
     try {
       await loadData();
       setShell(true);
-      if (state.role === "admin") setupAdminNotifications();
       if (state.section === "home") renderLanding("", true);
       else if (state.section === "account") renderAccountSettings();
       else if (state.section === "info") renderInfo();
       else if (state.role === "admin" && state.section === "admin") renderAdmin();
-      else renderDNSSettings();
+      else if (state.role === "admin" && state.section === "others") renderDNSSettings(true);
+      else renderDNSSettings(false);
     } catch (error) {
       setShell(true);
       const detail = error?.message || "Unknown error";
@@ -534,16 +545,13 @@
       </section>`;
   }
 
-function renderDNSSettings() {
+function renderDNSSettings(showOthers = false) {
   const isAdmin = state.role === "admin";
-  const approved = state.requests.filter((item) =>
-    item.status === "approved" && (isAdmin || item.user_id === state.user.id)
-  );
-  const myDomains = approved.filter((item) => item.user_id === state.user.id);
-  const otherDomains = isAdmin
-    ? approved.filter((item) => item.user_id !== state.user.id)
-    : [];
+  const approved = state.requests.filter((item) => item.status === "approved");
 
+  const domains = showOthers && isAdmin
+    ? approved.filter((item) => item.user_id !== state.user.id)
+    : approved.filter((item) => item.user_id === state.user.id);
   const renderDomainGroup = (domains) => `
     ${domains.length
       ? `<div class="domain-settings-list">${domains.map((request) => `
@@ -655,7 +663,7 @@ function renderDNSSettings() {
 
   app.querySelectorAll("[data-domain-card]").forEach((card) => {
     const requestId = card.dataset.requestId;
-    const request = approved.find((item) => item.id === requestId);
+    const request = domains.find((item) => item.id === requestId);
     const recordsContainer = card.querySelector("[data-record-list]");
     const warning = card.querySelector("[data-legacy-warning]");
     const form = card.querySelector("[data-record-form]");
@@ -964,6 +972,9 @@ function renderDNSSettings() {
   function renderAdmin() {
     const pending = state.requests.filter((item) => item.status === "pending").length;
     const approved = state.requests.filter((item) => item.status === "approved").length;
+    const visibleRequests = state.requests.filter(
+      (request) => request.status !== "rejected"
+    );
     const rows = state.requests.length ? state.requests.map((request) => `
       <tr>
         <td><span class="table-primary">${escapeHTML(request.requested_label)}.${escapeHTML(rootDomain)}</span></td>
@@ -977,13 +988,24 @@ function renderDNSSettings() {
     const canNotify = typeof window.Notification === "function";
     const permissionLabel = !canNotify ? "Desktop notifications unavailable in this browser" : window.Notification.permission === "granted" ? "Desktop notifications enabled" : window.Notification.permission === "denied" ? "Desktop notifications blocked in browser settings" : "Enable desktop notifications";
 
-    app.innerHTML = `
-      <div class="page-heading"><p class="eyebrow">ADMIN CONTROL PANEL</p><h1>Applications</h1><p class="lede">Review requests, follow preview links, and approve subdomains.</p></div>
-      <div class="stats"><div class="stat"><div class="stat-value">${pending}</div><div class="stat-label">Pending requests</div></div><div class="stat"><div class="stat-value">${approved}</div><div class="stat-label">Approved subdomains</div></div></div>
-      <section class="section panel-section"><div class="section-header-row"><div><h2>Request notifications</h2><p class="small">New requests show an in-app notice. Desktop notifications work while this site is open if you enable them.</p></div><button id="enable-notifications" class="button button-secondary button-small" ${!canNotify || window.Notification.permission !== "default" ? "disabled" : ""}>${permissionLabel}</button></div></section>
-      <section class="section panel-section"><div class="table-wrap"><table><thead><tr><th>Requested domain</th><th>Email</th><th>Purpose</th><th>Preview</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div></section>
-      <hr class="rule"><section class="section panel-section"><div class="section-header-row"><div><h2>DNS API connection</h2><p class="small">Check the server-side deSEC token and zone.</p></div><button id="test-dns" class="button button-secondary">Test deSEC connection</button></div><span id="dns-test-result" class="small" aria-live="polite">Not tested yet.</span></section>`;
-
+   app.innerHTML = `
+  <div class="page-heading">
+    <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
+    <h1>${showOthers && isAdmin ? "Others' subdomains" : isAdmin ? "MY domains" : "DNS records"}</h1>
+    <p class="lede">
+      ${showOthers && isAdmin
+        ? "Manage DNS records for approved subdomains assigned to other users."
+        : "Add and edit DNS records for your approved subdomains."}
+      DNS is managed here—no external nameserver setup is needed.
+    </p>
+  </div>
+  ${domains.length
+    ? renderDomainGroup(domains)
+    : showOthers && isAdmin
+      ? `<p class="empty compact-empty">No other users have approved subdomains.</p>`
+      : `<section class="empty-state"><h2>No approved subdomains yet</h2><p>Your DNS editor appears here after an administrator approves one of your requests.</p><button class="button button-primary" id="request-first-domain">Request a subdomain</button></section>`
+  }
+`;
     const notifyButton = app.querySelector("#enable-notifications");
     if (notifyButton && canNotify && window.Notification.permission === "default") {
       notifyButton.addEventListener("click", async () => {
@@ -1027,17 +1049,28 @@ function renderDNSSettings() {
       }
     }));
 
-    app.querySelectorAll("[data-reject]").forEach((button) => button.addEventListener("click", async () => {
-      const request = state.requests.find((item) => item.id === button.dataset.reject);
-      if (!request || !window.confirm(`Reject ${request.requested_label}.${rootDomain}?`)) return;
-      button.disabled = true;
-      const { error } = await state.client.from("subdomain_requests")
-        .update({ status: "rejected", reviewed_by: state.user.id, reviewed_at: new Date().toISOString() })
-        .eq("id", request.id).eq("status", "pending");
-      if (error) { showNotice(error.message, "error"); button.disabled = false; return; }
-      showNotice("Request rejected.", "success");
-      await renderCurrentView();
-    }));
+app.querySelectorAll("[data-reject]").forEach((button) => button.addEventListener("click", async () => {
+  const request = state.requests.find((item) => item.id === button.dataset.reject);
+
+  if (!request || !window.confirm(
+    `Permanently reject and delete ${request.requested_label}.${rootDomain}? This cannot be undone.`
+  )) return;
+
+  button.disabled = true;
+
+  try {
+    await invokeAccountFunction({
+      action: "reject-request",
+      requestId: request.id
+    });
+
+    showNotice("Request rejected and permanently deleted.", "success");
+    await renderCurrentView();
+  } catch (error) {
+    showNotice(error.message || "Could not reject request.", "error");
+    button.disabled = false;
+  }
+}));
 
     app.querySelector("#test-dns")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;

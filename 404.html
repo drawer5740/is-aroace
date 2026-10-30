@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#203856">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="The page you requested could not be found.">
+  <title>404 — Page not found | is-aroace</title>
+  <link rel="stylesheet" href="/styles.css?v=20261030-info2">
+
+  <style>
+    :root {
+      --orange: #E28C00;
+      --yellow: #ECCD00;
+      --gray: #666666;
+      --blue: #62AEDC;
+      --navy: #203856;
+      --text: #1f2b36;
+      --muted: #626d77;
+      --line: #d9dfe4;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background: #fff;
+      font: 13px/1.5 Verdana, Arial, sans-serif;
+    }
+
+    a {
+      color: var(--navy);
+      text-underline-offset: 2px;
+    }
+
+    a:hover { color: var(--orange); }
+
+    .topbar {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      padding: 8px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .header-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--navy);
+      text-decoration: none;
+    }
+
+    .header-brand-name {
+      display: inline-flex;
+      font-size: 19px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -.06em;
+    }
+
+    .header-brand-name span:nth-child(5n + 1) { color: var(--orange); }
+    .header-brand-name span:nth-child(5n + 2) { color: var(--yellow); }
+    .header-brand-name span:nth-child(5n + 3) { color: var(--gray); }
+    .header-brand-name span:nth-child(5n + 4) { color: var(--blue); }
+    .header-brand-name span:nth-child(5n + 5) { color: var(--navy); }
+
+    .header-brand-domain {
+      padding-left: 10px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      width: min(100% - 28px, 760px);
+      margin: 0 auto;
+      padding: 42px 0;
+    }
+
+    .not-found {
+      width: min(100%, 520px);
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .error-code {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: clamp(54px, 12vw, 84px);
+      line-height: 1;
+      letter-spacing: -.07em;
+      font-weight: 800;
+    }
+
+    .accent-rule {
+      width: 54px;
+      height: 4px;
+      margin: 0 0 18px;
+      background: linear-gradient(
+        90deg,
+        var(--orange) 0 20%,
+        var(--yellow) 20% 40%,
+        var(--gray) 40% 60%,
+        var(--blue) 60% 80%,
+        var(--navy) 80% 100%
+      );
+    }
+
+    h1 {
+      margin: 0 0 7px;
+      color: var(--navy);
+      font-size: 22px;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 12px;
+      border: 1px solid var(--navy);
+      border-radius: 3px;
+      color: var(--navy);
+      background: #fff;
+      font: 700 12px/1.3 Verdana, Arial, sans-serif;
+      text-decoration: none;
+    }
+
+    .button-primary {
+      color: #fff;
+      background: var(--navy);
+    }
+
+    .button-primary:hover {
+      color: #fff;
+      background: #2c4b70;
+    }
+
+    .button-secondary {
+      border-color: #bfcbd4;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 3px;
+    }
+
+    .site-footer {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      padding: 12px 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .footer-links {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+    }
+
+    .footer-links a { color: var(--navy); }
+
+    @media (max-width: 600px) {
+      .topbar {
+        min-height: 46px;
+        padding: 7px 10px;
+      }
+
+      main {
+        width: min(100% - 18px, 760px);
+        padding: 20px 0;
+      }
+
+      .not-found { padding: 18px; }
+      h1 { font-size: 20px; }
+
+      .site-footer { padding: 10px; }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <a class="header-brand" href="/" aria-label="is-aroace home">
+      <span class="header-brand-name" aria-hidden="true"><span>i</span><span>s</span><span>-</span><span>a</span><span>r</span><span>o</span><span>a</span><span>c</span><span>e</span></span>
+      <span class="header-brand-domain">.l.cd</span>
+    </a>
+  </header>
+
+  <main>
+    <section class="not-found" aria-labelledby="not-found-title">
+      <p class="error-code" aria-label="Error 404">404</p>
+      <div class="accent-rule" aria-hidden="true"></div>
+
+      <h1 id="not-found-title">Page not found</h1>
+      <p>The page you are looking for does not exist, may have moved, or may be unavailable.</p>
+
+      <div class="actions">
+        <a class="button button-primary" href="/">Back to home</a>
+        <a class="button button-secondary" href="/">Go to is-aroace</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>is-aroace - cool domain</span>
+    <span class="footer-links">
+      <a href="/terms/">Terms of Service</a>
+      <a href="/privacy/">Privacy Policy</a>
+    </span>
+    <span>is-aroace.l.cd</span>
+  </footer>
+</body>
+</html>

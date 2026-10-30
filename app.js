@@ -838,7 +838,6 @@
         }
       });
     });
-  }
 
   async function invokeAccountFunction(body) {
     const { data, error } = await state.client.functions.invoke("account-management", { body });

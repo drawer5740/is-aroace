@@ -27,7 +27,7 @@
   };
 
   const PALETTE = ["#E28C00", "#ECCD00", "#BBBBBB", "#62AEDC", "#203856"];
-  const labelPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  const labelPattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)$/;
   const supportedTypes = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA"];
   const BADGE_EMBED_CODE = '<a href="https://is-aroace.l.cd" target="_blank"><img src="https://is-aroace.l.cd/is-badge.png" alt="GET A FREE AROACE DOMAIN!" width="88" height="31" style="image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; image-rendering: pixelated;"></a>';
   const escapeHTML = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -128,7 +128,7 @@
     ]
   : [
       { id: "home", label: "Home" },
-      { id: "dns", label: "DNS records" },
+      { id: "dns", label: "DNS Records" },
       { id: "info", label: "Info" },
       { id: "account", label: "Account" }
     ];
@@ -427,7 +427,7 @@
     state.requests = data || [];
 
     if (state.section === "nameservers") state.section = "dns";
-    if (state.role === "admin" && !["home", "admin", "dns", "info", "account"].includes(state.section)) state.section = "admin";
+    if (state.role === "admin" && !["home", "admin", "dns", "others", "info", "account"].includes(state.section)) state.section = "admin";
     if (state.role !== "admin" && !["home", "dns", "info", "account"].includes(state.section)) state.section = "dns";
   }
 
@@ -623,36 +623,17 @@ function renderDNSSettings(showOthers = false) {
   app.innerHTML = `
     <div class="page-heading">
       <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
-      <h1>DNS records</h1>
+      <h1>${showOthers && isAdmin ? "Others' DNS" : "DNS Records"}</h1>
       <p class="lede">
-        ${isAdmin
-          ? "Manage DNS records for every approved subdomain. You can also remove a subdomain and its DNS records."
-          : "Add and edit A, AAAA, CNAME, MX, TXT, SRV, and CAA records for your approved subdomains."}
-        DNS is managed here—no external nameserver setup is needed.
+        ${showOthers && isAdmin
+          ? "Manage DNS records for approved subdomains assigned to other users."
+          : "Manage DNS records for your approved subdomains."}
       </p>
     </div>
-
-    ${isAdmin ? `
-      <section class="section panel-section">
-        <h2>MY domains</h2>
-        ${renderDomainGroup(myDomains)}
-      </section>
-
-      <hr class="rule">
-
-      <section class="section panel-section">
-        <h2>Others' domains</h2>
-        ${renderDomainGroup(otherDomains)}
-      </section>
-    ` : myDomains.length
-      ? renderDomainGroup(myDomains)
-      : `
-        <section class="empty-state">
-          <h2>No approved subdomains yet</h2>
-          <p>Your DNS editor appears here after an administrator approves one of your requests.</p>
-          <button class="button button-primary" id="request-first-domain">Request a subdomain</button>
-        </section>
-      `}
+    ${domains.length
+      ? renderDomainGroup(domains)
+      : `<p class="empty compact-empty">No approved subdomains in this section.</p>`
+    }
   `;
 
   const requestFirst = app.querySelector("#request-first-domain");
@@ -975,7 +956,7 @@ function renderDNSSettings(showOthers = false) {
     const visibleRequests = state.requests.filter(
       (request) => request.status !== "rejected"
     );
-    const rows = state.requests.length ? state.requests.map((request) => `
+    const rows = visibleRequests.length ? visibleRequests.map((request) => `
       <tr>
         <td><span class="table-primary">${escapeHTML(request.requested_label)}.${escapeHTML(rootDomain)}</span></td>
         <td>${escapeHTML(request.email || "—")}</td>
@@ -989,23 +970,51 @@ function renderDNSSettings(showOthers = false) {
     const permissionLabel = !canNotify ? "Desktop notifications unavailable in this browser" : window.Notification.permission === "granted" ? "Desktop notifications enabled" : window.Notification.permission === "denied" ? "Desktop notifications blocked in browser settings" : "Enable desktop notifications";
 
    app.innerHTML = `
-  <div class="page-heading">
-    <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
-    <h1>${showOthers && isAdmin ? "Others' subdomains" : isAdmin ? "MY domains" : "DNS records"}</h1>
-    <p class="lede">
-      ${showOthers && isAdmin
-        ? "Manage DNS records for approved subdomains assigned to other users."
-        : "Add and edit DNS records for your approved subdomains."}
-      DNS is managed here—no external nameserver setup is needed.
-    </p>
-  </div>
-  ${domains.length
-    ? renderDomainGroup(domains)
-    : showOthers && isAdmin
-      ? `<p class="empty compact-empty">No other users have approved subdomains.</p>`
-      : `<section class="empty-state"><h2>No approved subdomains yet</h2><p>Your DNS editor appears here after an administrator approves one of your requests.</p><button class="button button-primary" id="request-first-domain">Request a subdomain</button></section>`
-  }
+      <div class="page-heading">
+        <p class="eyebrow">ADMIN CONTROL PANEL</p>
+        <h1>Applications</h1>
+        <p class="lede">Review subdomain requests and manage approvals.</p>
+      </div>
+
+      <section class="section panel-section">
+        <h2>Request overview</h2>
+        <p>${pending} pending · ${approved} approved</p>
+      </section>
+
+      <section class="section panel-section">
+        <h2>Notifications</h2>
+        <p class="small">${permissionLabel}</p>
+        <button class="button button-secondary" id="enable-notifications" ${!canNotify || window.Notification.permission !== "default" ? "disabled" : ""}>
+          Enable desktop notifications
+        </button>
+      </section>
+
+      <section class="section panel-section">
+        <h2>Requests</h2>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Subdomain</th>
+                <th>Email</th>
+                <th>Purpose</th>
+                <th>Preview</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section panel-section">
+        <h2>DNS connection</h2>
+        <button class="button button-secondary" id="test-dns">Test DNS connection</button>
+        <p class="small" id="dns-test-result" aria-live="polite"></p>
+      </section>
 `;
+
     const notifyButton = app.querySelector("#enable-notifications");
     if (notifyButton && canNotify && window.Notification.permission === "default") {
       notifyButton.addEventListener("click", async () => {

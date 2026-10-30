@@ -26,7 +26,7 @@
     notifiedIds: new Set(),
   };
 
-  const PALETTE = ["#E28C00", "#ECCD00", "#666666", "#62AEDC", "#203856"];
+  const PALETTE = ["#E28C00", "#ECCD00", "#BBBBBB", "#62AEDC", "#203856"];
   const labelPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
   const supportedTypes = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA"];
   const BADGE_EMBED_CODE = '<a href="https://is-aroace.l.cd" target="_blank"><img src="https://is-aroace.l.cd/is-badge.png" alt="GET A FREE AROACE DOMAIN!" width="88" height="31" style="image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; image-rendering: pixelated;"></a>';

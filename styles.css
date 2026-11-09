@@ -73,7 +73,6 @@ a:hover { color: var(--orange); }
 .page-heading { margin: 0 0 16px; }
 .page-heading h1 { margin: 0 0 5px; color: var(--navy); font-size: 23px; line-height: 1.2; font-weight: 700; }
 .page-heading .lede, .lede { max-width: 780px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.eyebrow { margin: 0 0 5px; color: var(--gray); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .optional-label { color: var(--muted); font-size: 11px; font-weight: 400; }
 .field-hint { display: block; margin-top: 4px; }
 
@@ -246,4 +245,25 @@ code { padding: 1px 3px; background: var(--soft); font-size: .95em; overflow-wra
   #website-preview-frame { min-height: 280px; }
   .website-file-actions { gap: 4px; }
   .website-file-actions .button { padding: 4px 6px; font-size: 10px; }
+}
+
+/* Website editor occupies the workspace; only compact domain controls remain above it. */
+.website-toolbar-top { margin: 0 0 6px; justify-content: flex-start; }
+.website-domain-controls { min-width: 0; }
+.website-info-button { width: 27px; min-width: 27px; height: 27px; padding: 0; border: 1px solid var(--line); border-radius: 50%; font-weight: 700; }
+.website-workbench { min-height: calc(100vh - 185px); }
+.website-editor-wrap { height: calc(100vh - 270px); min-height: 520px; }
+.website-editor-fallback { min-height: 520px; }
+#website-preview-frame { min-height: 520px; }
+.website-info-dialog { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid #d9dfe4; border-radius: 5px; color: #1f2b36; background: #fff; box-shadow: 0 12px 40px rgba(0,0,0,.22); }
+.website-info-dialog::backdrop { background: rgba(17, 24, 31, .42); }
+.website-info-dialog-content { position: relative; padding: 22px; }
+.website-info-dialog-content h2 { margin: 0 32px 12px 0; font-size: 17px; }
+.website-info-dialog-content p { margin: 0; font-size: 13px; line-height: 1.6; }
+.website-info-close { position: absolute; top: 8px; right: 8px; font-size: 18px; }
+@media (max-width: 680px) {
+  .website-workbench { min-height: 0; }
+  .website-editor-wrap { height: 520px; min-height: 520px; }
+  .website-editor-fallback { min-height: 520px; }
+  #website-preview-frame { min-height: 360px; }
 }

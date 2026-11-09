@@ -153,13 +153,27 @@
         : "Notification permission was not granted.");
     }
 
-    const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    await navigator.serviceWorker.ready;
+    await navigator.serviceWorker.register("/sw.js?update=20261109-pushfix2", { scope: "/" });
+    const registration = await navigator.serviceWorker.ready;
+    const applicationServerKey = base64UrlToUint8Array(String(config.pushPublicKey));
     let subscription = await registration.pushManager.getSubscription();
+
+    // A subscription created with an older VAPID public key cannot be used
+    // with the current private key. Replace it instead of silently saving it.
+    if (subscription?.options?.applicationServerKey) {
+      const existingKey = new Uint8Array(subscription.options.applicationServerKey);
+      const keysMatch = existingKey.length === applicationServerKey.length &&
+        existingKey.every((byte, index) => byte === applicationServerKey[index]);
+      if (!keysMatch) {
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+    }
+
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: base64UrlToUint8Array(String(config.pushPublicKey))
+        applicationServerKey
       });
     }
 
@@ -668,9 +682,7 @@
           <section class="domain-card" data-domain-card data-request-id="${escapeHTML(request.id)}">
             <div class="domain-card-heading">
               <div>
-                <p class="eyebrow">${isAdmin
-                  ? `OWNER: ${escapeHTML(request.email || request.applicant_name || "Unknown")}`
-                  : "APPROVED SUBDOMAIN"}</p>
+                
                 <h2>${escapeHTML(request.requested_label)}.${escapeHTML(rootDomain)}</h2>
               </div>
               <span class="status status-approved">Approved</span>
@@ -702,7 +714,7 @@
 
     app.innerHTML = `
       <div class="page-heading">
-        <p class="eyebrow">${isAdmin ? "ADMIN CONTROL PANEL" : "YOUR WORKSPACE"}</p>
+        
         <h1>DNS records</h1>
         <p class="lede">
           ${isAdmin
@@ -1205,14 +1217,17 @@
     await saveWebsiteFile(false);
     const frame = app.querySelector("#website-preview-frame");
     if (!frame) return;
-    const previewEntry = state.websiteEntries.find((item) => item.path === "index.html" && item.kind === "file");
+    const activeIndexPath = state.websiteCurrentPath && /(?:^|\/)index\.html$/i.test(state.websiteCurrentPath)
+      ? state.websiteCurrentPath
+      : "index.html";
+    const previewEntry = state.websiteEntries.find((item) => item.path === activeIndexPath && item.kind === "file");
     if (!previewEntry) {
-      frame.srcdoc = "<!doctype html><p style='font-family:Arial;padding:24px'>Create an <code>index.html</code> file to see a preview.</p>";
+      frame.srcdoc = "<!doctype html><p style='font-family:Arial;padding:24px'>Create an <code>index.html</code> file to preview this folder. Root preview uses <code>/index.html</code>.</p>";
       return;
     }
     const domain = `${state.requests.find((item) => item.id === state.websiteRequestId)?.requested_label || "site"}.${rootDomain}`;
     try {
-      const { file } = await getWebsiteFile("index.html");
+      const { file } = await getWebsiteFile(activeIndexPath);
       const html = new TextDecoder().decode(base64ToBytes(file.content_base64));
       const parsed = new DOMParser().parseFromString(html, "text/html");
       const candidates = [
@@ -1221,7 +1236,7 @@
       for (const node of candidates) {
         const attribute = node.hasAttribute("src") ? "src" : "href";
         const raw = node.getAttribute(attribute);
-        const assetPath = websiteAssetPath(raw, "index.html", domain);
+        const assetPath = websiteAssetPath(raw, activeIndexPath, domain);
         if (!assetPath) continue;
         try {
           const assetResponse = await getWebsiteFile(assetPath);
@@ -1254,17 +1269,17 @@
     cleanupWebsiteEditor();
     const domains = state.requests.filter((item) => item.status === "approved" && (state.role === "admin" || item.user_id === state.user.id));
     if (!domains.length) {
-      app.innerHTML = `<div class="page-heading"><p class="eyebrow">WEBSITE</p><h1>Website</h1><p class="lede">The website editor appears after a subdomain is approved.</p></div>`;
+      app.innerHTML = `<div class="page-heading"><h1>Website</h1><p class="lede">The website editor appears after a subdomain is approved.</p></div>`;
       return;
     }
     if (!domains.some((item) => item.id === state.websiteRequestId)) state.websiteRequestId = domains[0].id;
     const selected = domains.find((item) => item.id === state.websiteRequestId);
     const fullDomain = `${selected.requested_label}.${rootDomain}`;
     app.innerHTML = `
-      <div class="website-page-heading">
-        <div><p class="eyebrow">YOUR WORKSPACE</p><h1>Website</h1><p class="lede">Edit files, preview your changes, and publish to your subdomain.</p></div>
+      <div class="website-toolbar website-toolbar-top">
         <div class="website-domain-controls">
           <select id="website-domain-select" aria-label="Select subdomain">${domains.map((item) => `<option value="${escapeHTML(item.id)}" ${item.id === selected.id ? "selected" : ""}>${escapeHTML(item.requested_label)}.${escapeHTML(rootDomain)}</option>`).join("")}</select>
+          <button class="button button-small button-quiet website-info-button" id="website-info" type="button" aria-label="Website editor information" title="What is this?">i</button>
           <a class="button button-secondary button-small" href="https://${escapeHTML(fullDomain)}/" target="_blank" rel="noopener noreferrer" ${selected.website_published ? "" : "hidden"}>Open site ↗</a>
         </div>
       </div>
@@ -1297,8 +1312,18 @@
           <iframe id="website-preview-frame" title="Website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:Arial;padding:24px'>Loading preview…</p>"></iframe>
         </section>
       </div>
-      <p class="website-footnote">Put <code>index.html</code> at the root. Files such as <code>/img.png</code>, <code>/style.css</code>, and <code>/script.js</code> can be referenced from your HTML. Upload keeps the original filename.</p>
     `;
+
+    app.querySelector("#website-info")?.addEventListener("click", () => {
+      const popup = document.createElement("dialog");
+      popup.className = "website-info-dialog";
+      popup.innerHTML = `<div class="website-info-dialog-content"><button class="button button-small button-quiet website-info-close" type="button" aria-label="Close">×</button><h2>What is this?</h2><p>if you dont know how to do the dns thing use this to directly edit the code of your page.</p></div>`;
+      document.body.appendChild(popup);
+      popup.addEventListener("click", (event) => { if (event.target === popup) popup.close(); });
+      popup.querySelector(".website-info-close")?.addEventListener("click", () => popup.close());
+      popup.addEventListener("close", () => popup.remove(), { once: true });
+      popup.showModal();
+    });
 
     app.querySelector("#website-domain-select")?.addEventListener("change", async (event) => {
       if (!(await saveWebsiteFile(false))) return;
@@ -1468,7 +1493,7 @@
     const approved = mine.filter((item) => item.status === "approved");
     const pending = mine.filter((item) => item.status === "pending");
     app.innerHTML = `
-      <div class="page-heading"><p class="eyebrow">YOUR PROFILE</p><h1>Account</h1><p class="lede">Request new subdomains, manage your assignments, and control your account.</p></div>
+      <div class="page-heading"><h1>Account</h1><p class="lede">Request new subdomains, manage your assignments, and control your account.</p></div>
       <section class="section panel-section"><h2>Request another subdomain</h2><p class="lede">Requests are reviewed by an administrator. A preview link is optional and may help reviewers understand your project.</p>
         <form id="request-domain-form" class="form">
           <div class="field"><label for="more-domain">Desired subdomain</label><div class="form-domain-row"><input id="more-domain" name="domain" required maxlength="63" placeholder="yourname"><span class="domain-suffix">.${escapeHTML(rootDomain)}</span></div></div>
@@ -1626,9 +1651,9 @@
           : "Enable new-request notifications";
 
     app.innerHTML = `
-      <div class="page-heading"><p class="eyebrow">ADMIN CONTROL PANEL</p><h1>Applications</h1><p class="lede">Review requests, follow preview links, and approve subdomains.</p></div>
+      <div class="page-heading"><h1>Applications</h1><p class="lede">Review requests, follow preview links, and approve subdomains.</p></div>
       <div class="stats"><div class="stat"><div class="stat-value">${pending}</div><div class="stat-label">Pending requests</div></div><div class="stat"><div class="stat-value">${approved}</div><div class="stat-label">Approved subdomains</div></div></div>
-      <section class="section panel-section"><div class="section-header-row"><div><h2>Request notifications</h2><p class="small">Get a push notification when a new application arrives, even when this website is closed.</p></div><button id="enable-admin-push" class="button button-secondary button-small" ${pushReady ? "" : "disabled"}>${pushLabel}</button></div><p class="small" id="admin-push-status" aria-live="polite">${pushReady ? "Enable notifications on each device where you want to receive new-request alerts." : escapeHTML(pushUnavailableMessage()) + " The site owner must also configure the public VAPID key and deploy the push functions."}</p></section>
+      <section class="section panel-section"><div class="section-header-row"><div><h2>Request notifications</h2><p class="small">Get a push notification when a new application arrives, even when this website is closed.</p></div><div class="actions"><button id="enable-admin-push" class="button button-secondary button-small" ${pushReady ? "" : "disabled"}>${pushLabel}</button><button id="test-admin-push" class="button button-quiet button-small" ${pushReady ? "" : "disabled"}>Send test notification</button></div></div><p class="small" id="admin-push-status" aria-live="polite">${pushReady ? "Enable notifications on each device where you want to receive new-request alerts, then send a test." : escapeHTML(pushUnavailableMessage()) + " The site owner must also configure the public VAPID key and deploy the push functions."}</p></section>
       <section class="section panel-section"><div class="table-wrap"><table><thead><tr><th>Requested domain</th><th>Email</th><th>Purpose</th><th>Preview</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div></section>
       <hr class="rule"><section class="section panel-section"><div class="section-header-row"><div><h2>DNS API connection</h2><p class="small">Check the server-side deSEC token and zone.</p></div><button id="test-dns" class="button button-secondary">Test deSEC connection</button></div><span id="dns-test-result" class="small" aria-live="polite">Not tested yet.</span></section>`;
 
@@ -1639,14 +1664,40 @@
       button.textContent = "Enabling…";
       try {
         await savePushSubscription("admin");
-        button.textContent = "New-request notifications enabled";
-        if (status) status.textContent = "This device will be notified when a new application is submitted.";
+        button.textContent = "Notifications enabled";
+        if (status) status.textContent = "This device is registered. Use Send test notification to check delivery.";
         showNotice("New-request push notifications enabled.", "success");
       } catch (error) {
         button.disabled = false;
         button.textContent = "Enable new-request notifications";
         if (status) status.textContent = error.message || "Could not enable push notifications.";
         showNotice(error.message || "Could not enable push notifications.", "error");
+      }
+    });
+
+    app.querySelector("#test-admin-push")?.addEventListener("click", async (pushEvent) => {
+      const button = pushEvent.currentTarget;
+      const status = app.querySelector("#admin-push-status");
+      button.disabled = true;
+      button.textContent = "Sending…";
+      try {
+        const { data, error } = await state.client.functions.invoke("manage-push-subscription", {
+          body: { scope: "admin-test" }
+        });
+        if (error) {
+          let detail = error.message || "Test notification failed.";
+          try { const payload = await error.context?.json(); if (payload?.error) detail = payload.error; } catch {}
+          throw new Error(detail);
+        }
+        if (!data?.success) throw new Error(data?.error || "Test notification failed.");
+        if (status) status.textContent = "Test push sent. Check this device; it should arrive even after you close the website.";
+        showNotice("Test notification sent.", "success");
+      } catch (error) {
+        if (status) status.textContent = error.message || "Test notification failed.";
+        showNotice(error.message || "Test notification failed.", "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Send test notification";
       }
     });
 
@@ -1685,14 +1736,18 @@
 
     app.querySelectorAll("[data-reject]").forEach((button) => button.addEventListener("click", async () => {
       const request = state.requests.find((item) => item.id === button.dataset.reject);
-      if (!request || !window.confirm(`Reject ${request.requested_label}.${rootDomain}?`)) return;
+      if (!request || !window.confirm(`Reject ${request.requested_label}.${rootDomain} and permanently delete the request? The applicant will be notified if they enabled status notifications.`)) return;
       button.disabled = true;
-      const { error } = await state.client.from("subdomain_requests")
-        .update({ status: "rejected", reviewed_by: state.user.id, reviewed_at: new Date().toISOString() })
-        .eq("id", request.id).eq("status", "pending");
-      if (error) { showNotice(error.message, "error"); button.disabled = false; return; }
-      showNotice("Request rejected.", "success");
-      await renderCurrentView();
+      button.textContent = "Notifying…";
+      try {
+        const result = await invokeAccountFunction({ action: "reject-request", requestId: request.id });
+        showNotice(result.message || "Request rejected and permanently deleted.", "success");
+        await renderCurrentView();
+      } catch (error) {
+        showNotice(error.message || "Could not reject and delete the request.", "error");
+        button.disabled = false;
+        button.textContent = "Reject";
+      }
     }));
 
     app.querySelector("#test-dns")?.addEventListener("click", async (event) => {

@@ -1,3 +1,4 @@
+/* is-aroace UI â€” clean, compact, and responsive */
 :root {
   color-scheme: light;
   --orange: #E28C00;
@@ -181,3 +182,69 @@ code { padding: 1px 3px; background: var(--soft); font-size: .95em; overflow-wra
 .policy-meta { margin: 0 0 18px; color: var(--muted); font-size: 11px !important; }
 .policy-back { display: inline-flex; margin: 0 0 18px; }
 @media (max-width: 760px) { .policy-main { padding: 14px 0 22px; } .policy-main h1 { font-size: 22px; } }
+
+/* Website editor: restrained workspace chrome with a VS Code / CodePen layout. */
+.website-page-heading { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; margin: 0 0 13px; }
+.website-page-heading .page-heading { margin: 0; }
+.website-page-heading h1 { margin: 0 0 5px; color: var(--navy); font-size: 23px; line-height: 1.2; }
+.website-domain-controls { display: flex; align-items: center; gap: 7px; min-width: min(100%, 360px); }
+.website-domain-controls select { width: min(100%, 280px); }
+.website-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 9px; }
+.website-file-actions, .website-publish-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.website-save-status { color: var(--muted); font-size: 10px; min-width: 90px; }
+.website-save-status[data-error="true"] { color: var(--danger); }
+.website-workbench { display: grid; grid-template-columns: 185px minmax(300px, 1.15fr) minmax(270px, .85fr); min-height: 570px; border: 1px solid #30343b; background: #1e1e1e; overflow: hidden; }
+.website-explorer { min-width: 0; color: #d4d4d4; background: #252526; border-right: 1px solid #3a3a3a; }
+.website-pane-heading { display: flex; align-items: center; justify-content: space-between; gap: 7px; height: 35px; padding: 0 10px; border-bottom: 1px solid #3a3a3a; color: #c7c7c7; font-size: 10px; font-weight: 700; letter-spacing: .07em; }
+.website-pane-heading .small { color: #969696; font-size: 9px; }
+.website-file-tree { padding: 5px 0 12px; max-height: 535px; overflow: auto; }
+.website-file-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 26px; padding: 4px 7px 4px calc(8px + (var(--tree-depth) * 12px)); border: 0; border-radius: 0; background: transparent; color: #cfcfcf; text-align: left; font: 11px/1.35 Consolas, "Courier New", monospace; }
+.website-file-row:hover { background: #2a2d2e; }
+.website-file-row.is-selected { color: #fff; background: #37373d; }
+.website-file-symbol { flex: 0 0 10px; color: #9da9b5; }
+.website-file-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.website-empty-files { padding: 7px 10px; color: #a8a8a8; }
+.website-code-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid #3a3a3a; }
+.website-open-tabs { display: flex; flex: 0 0 35px; min-width: 0; overflow-x: auto; border-bottom: 1px solid #3a3a3a; background: #252526; }
+.website-tab { display: inline-flex; align-items: center; gap: 9px; min-width: 0; max-width: 190px; padding: 0 10px; border: 0; border-right: 1px solid #3a3a3a; border-radius: 0; background: #2d2d2d; color: #aaa; font: 11px/1.2 Consolas, "Courier New", monospace; white-space: nowrap; }
+.website-tab.is-active { background: #1e1e1e; color: #fff; box-shadow: inset 0 1px 0 #62aedc; }
+.website-tab > span:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.website-tab-close { color: #999; font: 15px/1 Arial, sans-serif; }
+.website-tab-close:hover { color: #fff; }
+.website-editor-wrap { position: relative; flex: 1 1 auto; min-height: 0; height: 500px; overflow: hidden; background: #1e1e1e; }
+.website-monaco-editor { position: absolute; inset: 0; min-height: 0; }
+.website-editor-fallback { width: 100%; height: 100%; min-height: 500px; padding: 14px; resize: none; border: 0; border-radius: 0; outline: 0; background: #1e1e1e; color: #d4d4d4; font: 13px/1.6 Consolas, "Courier New", monospace; tab-size: 2; white-space: pre; }
+.website-editor-fallback:focus { border: 0; outline: 0; }
+.website-editor-placeholder, .website-binary-note { display: grid; align-content: center; justify-items: center; gap: 7px; height: 100%; min-height: 300px; padding: 25px; color: #b9b9b9; text-align: center; font-size: 12px; }
+.website-binary-note { align-content: center; }
+.website-binary-note strong { color: #fff; font: 13px Consolas, "Courier New", monospace; }
+.website-binary-note p { max-width: 380px; margin: 0; }
+.website-binary-note code { color: #e4e4e4; background: #2d2d2d; }
+.website-statusbar { display: flex; justify-content: space-between; gap: 8px; min-height: 22px; padding: 4px 9px; background: #203856; color: #fff; font: 10px/1.2 Consolas, "Courier New", monospace; }
+.website-preview-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #fff; }
+.website-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 35px; padding: 0 10px; border-bottom: 1px solid var(--line); background: #f7f8f9; color: var(--text); font-size: 11px; }
+.website-preview-heading .text-button { color: var(--navy); }
+#website-preview-frame { display: block; width: 100%; flex: 1 1 auto; min-height: 500px; border: 0; background: #fff; }
+.website-footnote { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.website-footnote code { white-space: nowrap; }
+
+@media (max-width: 1050px) {
+  .website-workbench { grid-template-columns: 165px minmax(280px, 1fr); }
+  .website-preview-area { grid-column: 1 / -1; min-height: 330px; border-top: 1px solid #3a3a3a; }
+  #website-preview-frame { min-height: 330px; }
+}
+@media (max-width: 680px) {
+  .website-page-heading { align-items: stretch; }
+  .website-domain-controls { width: 100%; min-width: 0; }
+  .website-domain-controls select { flex: 1 1 auto; width: 1px; }
+  .website-toolbar { align-items: flex-start; }
+  .website-publish-actions { width: 100%; justify-content: flex-end; }
+  .website-workbench { grid-template-columns: 115px minmax(0, 1fr); min-height: 0; }
+  .website-explorer { min-width: 0; }
+  .website-file-row { padding-left: calc(5px + (var(--tree-depth) * 7px)); font-size: 10px; }
+  .website-editor-wrap { height: 460px; }
+  .website-editor-fallback { min-height: 460px; font-size: 12px; }
+  #website-preview-frame { min-height: 280px; }
+  .website-file-actions { gap: 4px; }
+  .website-file-actions .button { padding: 4px 6px; font-size: 10px; }
+}

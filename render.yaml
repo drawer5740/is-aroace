@@ -3,10 +3,12 @@ services:
     name: is-aroace-website-router
     runtime: node
     plan: free
-    rootDir: website-router
-    buildCommand: npm install --omit=dev
-    startCommand: npm start
+    buildCommand: npm --prefix website-router install --omit=dev
+    startCommand: npm --prefix website-router start
     healthCheckPath: /health
+    domains:
+      - is-aroace.l.cd
+      - "*.is-aroace.l.cd"
     envVars:
       - key: SUPABASE_URL
         sync: false

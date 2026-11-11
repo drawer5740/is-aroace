@@ -733,10 +733,61 @@
     if (state.section === "website" && !hasApprovedSites) state.section = "dns";
   }
 
+  function renderWorkspaceSkeleton() {
+    if (!document.querySelector("#workspace-skeleton-styles")) {
+      const style = document.createElement("style");
+      style.id = "workspace-skeleton-styles";
+      style.textContent = `
+        .workspace-skeleton { display:grid; gap:18px; width:100%; }
+        .workspace-skeleton-heading { display:grid; gap:9px; max-width:520px; }
+        .workspace-skeleton-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+        .workspace-skeleton-panel { display:grid; gap:14px; padding:18px; border:1px solid var(--border,#e1e4e8); background:var(--surface,#fff); border-radius:4px; }
+        .workspace-skeleton-card { display:grid; gap:12px; min-height:92px; padding:15px; border:1px solid var(--border,#e1e4e8); background:var(--surface,#fff); border-radius:4px; }
+        .workspace-skeleton-line, .workspace-skeleton-block { display:block; background:var(--skeleton-color,#e8eaed); border-radius:2px; animation:workspace-skeleton-pulse 1.35s ease-in-out infinite; }
+        .workspace-skeleton-line { height:10px; }
+        .workspace-skeleton-block { min-height:20px; }
+        .workspace-skeleton-line.is-title { width:42%; height:23px; }
+        .workspace-skeleton-line.is-wide { width:78%; }
+        .workspace-skeleton-line.is-medium { width:54%; }
+        .workspace-skeleton-line.is-short { width:28%; }
+        .workspace-skeleton-line.is-full { width:100%; }
+        .workspace-skeleton-line.is-button { width:112px; height:32px; }
+        .workspace-skeleton-table { display:grid; gap:11px; }
+        .workspace-skeleton-row { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 88px; gap:14px; align-items:center; }
+        .workspace-skeleton-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+        @keyframes workspace-skeleton-pulse { 0%,100% { opacity:.48; } 50% { opacity:1; } }
+        @media (max-width:700px) { .workspace-skeleton-stats { grid-template-columns:1fr; } .workspace-skeleton-row { grid-template-columns:minmax(0,1fr) 72px; } .workspace-skeleton-row .workspace-skeleton-line:nth-child(2) { display:none; } }
+        @media (prefers-reduced-motion:reduce) { .workspace-skeleton-line,.workspace-skeleton-block { animation:none; opacity:.7; } }
+      `;
+      document.head.appendChild(style);
+    }
+    app.innerHTML = `
+      <div class="workspace-skeleton" role="status" aria-label="Loading workspace">
+        <span class="workspace-skeleton-sr-only">Loading your workspace</span>
+        <div class="workspace-skeleton-heading">
+          <span class="workspace-skeleton-line is-title"></span>
+          <span class="workspace-skeleton-line is-wide"></span>
+        </div>
+        <div class="workspace-skeleton-stats" aria-hidden="true">
+          <div class="workspace-skeleton-card"><span class="workspace-skeleton-line is-short"></span><span class="workspace-skeleton-line is-title"></span></div>
+          <div class="workspace-skeleton-card"><span class="workspace-skeleton-line is-short"></span><span class="workspace-skeleton-line is-title"></span></div>
+          <div class="workspace-skeleton-card"><span class="workspace-skeleton-line is-short"></span><span class="workspace-skeleton-line is-title"></span></div>
+        </div>
+        <section class="workspace-skeleton-panel" aria-hidden="true">
+          <span class="workspace-skeleton-line is-medium"></span>
+          <div class="workspace-skeleton-table">
+            <div class="workspace-skeleton-row"><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-button"></span></div>
+            <div class="workspace-skeleton-row"><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-button"></span></div>
+            <div class="workspace-skeleton-row"><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-full"></span><span class="workspace-skeleton-line is-button"></span></div>
+          </div>
+        </section>
+      </div>`;
+  }
+
   async function renderCurrentView() {
     if (!state.session || !state.user) { renderPublic(); return; }
     app.className = "main workspace-main";
-    app.innerHTML = `<div class="loading-state">Loading your workspace…</div>`;
+    renderWorkspaceSkeleton();
     try {
       await loadData();
       setShell(true);
@@ -1705,6 +1756,23 @@
         display: block; flex: 1; width: 100%; min-height: 0;
         border: 0; background: #ffffff;
       }
+      .website-skeleton-stack { display:grid; gap:10px; padding:12px; }
+      .website-skeleton-row { display:flex; align-items:center; gap:8px; min-height:23px; }
+      .website-skeleton-block { display:block; height:9px; background:#414141; border-radius:2px; animation:website-skeleton-pulse 1.35s ease-in-out infinite; }
+      .website-skeleton-block.is-icon { width:13px; height:13px; flex:none; }
+      .website-skeleton-block.is-file { width:62%; }
+      .website-skeleton-block.is-short { width:34%; }
+      .website-skeleton-editor { display:grid; gap:13px; padding:18px 20px; }
+      .website-skeleton-editor-line { display:flex; align-items:center; gap:18px; min-height:13px; }
+      .website-skeleton-editor-line::before { content:""; width:20px; height:8px; flex:none; background:#343434; border-radius:2px; animation:website-skeleton-pulse 1.35s ease-in-out infinite; }
+      .website-skeleton-editor-line span { display:block; width:var(--line-width,65%); height:8px; background:#343434; border-radius:2px; animation:website-skeleton-pulse 1.35s ease-in-out infinite; }
+      .website-preview-skeleton { display:grid; gap:14px; padding:28px; background:#fff; }
+      .website-preview-skeleton .website-skeleton-block { background:#e5e7eb; }
+      .website-preview-skeleton .is-title { width:54%; height:20px; }
+      .website-preview-skeleton .is-copy { width:86%; }
+      .website-preview-skeleton .is-button { width:110px; height:32px; }
+      @keyframes website-skeleton-pulse { 0%,100% { opacity:.48; } 50% { opacity:1; } }
+      @media (prefers-reduced-motion:reduce) { .website-skeleton-block,.website-skeleton-editor-line::before,.website-skeleton-editor-line span { animation:none; opacity:.7; } }
       @media (max-width: 1120px) {
         .website-ide-workbench {
           grid-template-columns: 190px minmax(0, 1fr);
@@ -1755,16 +1823,34 @@
         <div class="website-ide-workbench">
           <aside class="website-explorer" aria-label="Site files">
             <div class="website-pane-heading"><span>Files</span><span class="small">${state.websiteEntries.length} items</span><span class="website-explorer-actions"><button class="website-icon-button" id="website-new-folder" type="button" aria-label="New folder" title="New folder"><i class="ri-folder-add-line" aria-hidden="true"></i></button><button class="website-icon-button" id="website-delete-entry" type="button" aria-label="Delete selected file or folder" title="Delete selected" disabled><i class="ri-delete-bin-6-line" aria-hidden="true"></i></button></span></div>
-            <div id="website-file-tree" class="website-file-tree"><p class="small">Loading files…</p></div>
+            <div id="website-file-tree" class="website-file-tree" role="status" aria-label="Loading website files">
+              <div class="website-skeleton-stack" aria-hidden="true">
+                <div class="website-skeleton-row"><span class="website-skeleton-block is-icon"></span><span class="website-skeleton-block is-file"></span></div>
+                <div class="website-skeleton-row"><span class="website-skeleton-block is-icon"></span><span class="website-skeleton-block is-short"></span></div>
+                <div class="website-skeleton-row"><span class="website-skeleton-block is-icon"></span><span class="website-skeleton-block is-file"></span></div>
+                <div class="website-skeleton-row"><span class="website-skeleton-block is-icon"></span><span class="website-skeleton-block is-short"></span></div>
+                <div class="website-skeleton-row"><span class="website-skeleton-block is-icon"></span><span class="website-skeleton-block is-file"></span></div>
+              </div>
+            </div>
           </aside>
           <section class="website-code-area" aria-label="Source editor">
             <div id="website-open-tabs" class="website-open-tabs" role="tablist" aria-label="Open files"></div>
-            <div id="website-editor-wrap" class="website-editor-wrap"><div class="website-editor-placeholder">Loading your files…</div></div>
+            <div id="website-editor-wrap" class="website-editor-wrap" role="status" aria-label="Loading code editor">
+              <div class="website-skeleton-editor" aria-hidden="true">
+                <div class="website-skeleton-editor-line"><span style="--line-width:34%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:58%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:76%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:45%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:68%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:29%"></span></div>
+                <div class="website-skeleton-editor-line"><span style="--line-width:52%"></span></div>
+              </div>
+            </div>
             <div class="website-statusbar"><span>${escapeHTML(fullDomain)}</span><span id="website-language-status">HTML</span></div>
           </section>
           <section class="website-preview-area" aria-label="Live website preview">
             <div class="website-preview-heading"><span>Preview</span><div class="website-preview-heading-actions"><span id="website-preview-url" class="website-preview-url">https://${escapeHTML(fullDomain)}/index.html</span><span id="website-preview-status" class="website-preview-status" role="status" aria-live="polite">Loading</span><button class="website-preview-refresh" id="website-refresh-preview" type="button" aria-label="Refresh preview" title="Refresh preview"><i class="ri-refresh-line" aria-hidden="true"></i></button></div></div>
-            <iframe id="website-preview-frame" class="website-preview-frame" title="Live website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:system-ui;padding:24px;color:#555'>Loading preview…</p>"></iframe>
+            <iframe id="website-preview-frame" class="website-preview-frame" title="Live website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{margin:0;padding:28px;font:14px system-ui,sans-serif}.s{height:9px;background:#e5e7eb;border-radius:2px;margin:0 0 15px;animation:p 1.35s ease-in-out infinite}.t{width:54%;height:20px}.w{width:86%}.m{width:67%}@keyframes p{0%,100%{opacity:.48}50%{opacity:1}}</style></head><body><div class='s t'></div><div class='s w'></div><div class='s m'></div><div class='s w'></div></body></html>"></iframe>
           </section>
         </div>
       </section>
@@ -2180,18 +2266,19 @@
   function renderInviteCodeList(invites) {
     const list = app.querySelector("#invite-code-list");
     if (!list) return;
-    if (!invites.length) {
-      list.innerHTML = `<p class="empty compact-empty">No invite codes yet. Create one above.</p>`;
-      return;
-    }
-    list.innerHTML = invites.map((invite) => {
+
+    const activeInvites = invites.filter((invite) => !invite.revoked_at);
+    const revokedInvites = invites.filter((invite) => Boolean(invite.revoked_at));
+
+    const renderRows = (items, isRevoked = false) => items.map((invite) => {
       const validity = inviteValidity(invite);
       const uses = Number(invite.uses_count) || 0;
       const max = Number(invite.max_uses) || 0;
       const expiry = invite.expires_at ? new Date(invite.expires_at).toLocaleString() : "Never";
-      const canRevoke = validity.label === "Active";
+      const created = invite.created_at ? new Date(invite.created_at).toLocaleString() : "—";
+      const canRevoke = !isRevoked && validity.label === "Active";
       return `
-        <article class="invite-code-row">
+        <article class="invite-code-row ${isRevoked ? "is-revoked" : ""}">
           <div class="invite-code-main">
             <code class="invite-code-value">${escapeHTML(invite.code || "Code unavailable")}</code>
             <span class="status ${validity.className}">${validity.label}</span>
@@ -2199,7 +2286,7 @@
           <div class="invite-code-meta">
             <span><strong>Uses</strong> ${uses} / ${max}</span>
             <span><strong>Expires</strong> ${escapeHTML(expiry)}</span>
-            <span><strong>Created</strong> ${escapeHTML(new Date(invite.created_at).toLocaleString())}</span>
+            <span><strong>Created</strong> ${escapeHTML(created)}</span>
             <span><strong>Slug</strong> ${escapeHTML(invite.slug || "None")}</span>
           </div>
           <div class="actions invite-code-actions">
@@ -2208,6 +2295,21 @@
           </div>
         </article>`;
     }).join("");
+
+    list.innerHTML = `
+      <div class="invite-code-active-list">
+        ${activeInvites.length
+          ? renderRows(activeInvites)
+          : `<p class="empty compact-empty">No active invite codes. Create one above.</p>`}
+      </div>
+      ${revokedInvites.length ? `
+        <details class="invite-code-revoked-disclosure">
+          <summary>
+            <span>Revoked codes</span>
+            <span class="invite-code-revoked-count">${revokedInvites.length}</span>
+          </summary>
+          <div class="invite-code-revoked-list">${renderRows(revokedInvites, true)}</div>
+        </details>` : ""}`;
 
     list.querySelectorAll("[data-copy-invite]").forEach((button) => button.addEventListener("click", async () => {
       const invite = state.inviteCodes.find((item) => item.id === button.dataset.copyInvite);
@@ -2263,6 +2365,29 @@
         .invite-code-meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted, #667085); font-size:12px; }
         .invite-code-meta strong { color:inherit; font-weight:600; }
         .invite-code-actions { margin:0; }
+        .invite-code-revoked-disclosure {
+          margin-top:8px;
+          border-top:1px solid var(--border, #d9dee7);
+          padding-top:12px;
+        }
+        .invite-code-revoked-disclosure > summary {
+          display:flex; align-items:center; gap:9px;
+          width:max-content; max-width:100%; cursor:pointer;
+          color:var(--muted, #667085); font-size:13px; font-weight:600;
+          user-select:none;
+        }
+        .invite-code-revoked-count {
+          display:inline-flex; min-width:21px; height:21px;
+          align-items:center; justify-content:center; padding:0 6px;
+          border:1px solid var(--border, #d9dee7); border-radius:4px;
+          color:var(--muted, #667085); font-size:11px; font-weight:500;
+        }
+        .invite-code-revoked-list { display:grid; gap:10px; margin-top:12px; }
+        .invite-code-row.is-revoked {
+          opacity:.48; border-style:dashed; background:transparent;
+        }
+        .invite-code-row.is-revoked:hover,
+        .invite-code-row.is-revoked:focus-within { opacity:.72; }
         .auth-invite-option { margin-top:14px; padding-top:10px; border-top:1px solid var(--border, #d9dee7); }
         .invite-auth-card .field-hint { display:block; margin-top:5px; }
         @media (max-width:600px) { .invite-code-create-grid { grid-template-columns:1fr; } }

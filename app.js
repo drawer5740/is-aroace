@@ -1009,6 +1009,27 @@
     return String(path || "").split("/").pop() || String(path || "");
   }
 
+  function websiteFileIcon(path) {
+    const ext = String(path || "").split(".").pop().toLowerCase();
+    if (["html", "htm"].includes(ext)) return "ri-html5-line";
+    if (["css", "scss", "less"].includes(ext)) return "ri-css3-line";
+    if (["js", "mjs", "jsx", "ts", "tsx"].includes(ext)) return "ri-javascript-line";
+    if (ext === "json") return "ri-braces-line";
+    if (ext === "md") return "ri-markdown-line";
+    if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext)) return "ri-image-line";
+    if (["yml", "yaml", "toml", "xml"].includes(ext)) return "ri-file-code-line";
+    return "ri-file-text-line";
+  }
+
+  function websiteLanguageLabel(path) {
+    const language = websiteLanguage(path);
+    return ({
+      html: "HTML", css: "CSS", javascript: "JavaScript", typescript: "TypeScript",
+      json: "JSON", markdown: "Markdown", yaml: "YAML", xml: "XML", sql: "SQL",
+      python: "Python", shell: "Shell", scss: "SCSS", less: "Less", plaintext: "Plain text"
+    })[language] || language.toUpperCase();
+  }
+
   function cleanupWebsiteEditor() {
     if (state.websiteSaveTimer) clearTimeout(state.websiteSaveTimer);
     state.websiteSaveTimer = null;
@@ -1058,6 +1079,14 @@
 
   function websiteStatus(message, isError = false) {
     const status = app.querySelector("#website-save-status");
+    if (status) {
+      status.textContent = message;
+      status.dataset.error = isError ? "true" : "false";
+    }
+  }
+
+  function websitePreviewStatus(message, isError = false) {
+    const status = app.querySelector("#website-preview-status");
     if (status) {
       status.textContent = message;
       status.dataset.error = isError ? "true" : "false";
@@ -1117,9 +1146,10 @@
     state.websiteDirty = true;
     websiteStatus("Unsaved changes");
     if (state.websiteSaveTimer) clearTimeout(state.websiteSaveTimer);
-    state.websiteSaveTimer = setTimeout(() => {
+    state.websiteSaveTimer = setTimeout(async () => {
       state.websiteSaveTimer = null;
-      saveWebsiteFile(false);
+      const saved = await saveWebsiteFile(false);
+      if (saved) await renderWebsitePreview();
     }, 900);
   }
 
@@ -1140,8 +1170,8 @@
     tree.innerHTML = entries.map((entry) => {
       const depth = String(entry.path).split("/").length - 1;
       const selected = entry.path === state.websiteSelectedEntryPath;
-      const symbol = entry.kind === "folder" ? "▸" : "";
-      return `<button type="button" class="website-file-row ${selected ? "is-selected" : ""}" data-website-path="${escapeHTML(entry.path)}" data-entry-kind="${escapeHTML(entry.kind)}" style="--tree-depth:${depth}"><span class="website-file-symbol">${symbol || "·"}</span><span class="website-file-label">${escapeHTML(websiteFileName(entry.path))}</span></button>`;
+      const icon = entry.kind === "folder" ? "ri-folder-3-line" : websiteFileIcon(entry.path);
+      return `<button type="button" class="website-file-row ${selected ? "is-selected" : ""}" data-website-path="${escapeHTML(entry.path)}" data-entry-kind="${escapeHTML(entry.kind)}" aria-current="${selected ? "true" : "false"}" title="${escapeHTML(entry.path)}" style="--tree-depth:${depth}"><i class="website-file-icon ${icon}" aria-hidden="true"></i><span class="website-file-label">${escapeHTML(websiteFileName(entry.path))}</span></button>`;
     }).join("") || `<p class="small website-empty-files">No files yet.</p>`;
     tree.querySelectorAll("[data-website-path]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -1172,10 +1202,14 @@
     const entry = state.websiteEntries.find((item) => item.path === path && item.kind === "file");
     if (!entry) return;
     try {
-      websiteStatus("Opening…");
+      websiteStatus("Opening");
       const result = await getWebsiteFile(path);
       state.websiteCurrentPath = path;
       state.websiteCurrentFile = result.file;
+      state.websiteSelectedEntryPath = path;
+      state.websiteSelectedEntryKind = "file";
+      const languageStatus = app.querySelector("#website-language-status");
+      if (languageStatus) languageStatus.textContent = isWebsiteTextFile(path, result.file.mime_type) ? websiteLanguageLabel(path) : "Asset";
       if (!state.websiteOpenTabs.includes(path)) state.websiteOpenTabs.push(path);
       renderWebsiteTabs();
       const binary = !isWebsiteTextFile(path, result.file.mime_type);
@@ -1203,10 +1237,13 @@
               minimap: { enabled: false },
               fontSize: 13,
               lineHeight: 21,
+              fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
               tabSize: 2,
               wordWrap: "on",
               scrollBeyondLastLine: false,
               renderLineHighlight: "line",
+              bracketPairColorization: { enabled: true },
+              guides: { bracketPairs: true, indentation: true },
               padding: { top: 12, bottom: 12 },
               overviewRulerLanes: 0,
               scrollbar: { verticalScrollbarSize: 9, horizontalScrollbarSize: 9 },
@@ -1229,7 +1266,7 @@
           textarea.value = text;
           state.websiteFallbackEditor = textarea;
           textarea.addEventListener("input", scheduleWebsiteSave);
-          websiteStatus("Text editor mode · syntax editor unavailable");
+          websiteStatus("Text editor mode — syntax editor unavailable");
         }
       }
       if (!state.websiteDirty) websiteStatus("Saved");
@@ -1243,13 +1280,15 @@
     const tabs = app.querySelector("#website-open-tabs");
     if (!tabs) return;
     tabs.innerHTML = state.websiteOpenTabs.map((path) => `
-      <button type="button" class="website-tab ${path === state.websiteCurrentPath ? "is-active" : ""}" data-website-tab="${escapeHTML(path)}">
-        <span>${escapeHTML(websiteFileName(path))}</span><span class="website-tab-close" data-close-tab="${escapeHTML(path)}" aria-label="Close ${escapeHTML(websiteFileName(path))}">×</span>
-      </button>`).join("");
-    tabs.querySelectorAll("[data-website-tab]").forEach((button) => {
-      button.addEventListener("click", async (event) => {
+      <div class="website-tab ${path === state.websiteCurrentPath ? "is-active" : ""}" data-website-tab="${escapeHTML(path)}">
+        <button type="button" class="website-tab-select" role="tab" aria-selected="${path === state.websiteCurrentPath ? "true" : "false"}">
+          <span class="website-tab-name"><i class="${websiteFileIcon(path)}" aria-hidden="true"></i>${escapeHTML(websiteFileName(path))}</span>
+        </button><button type="button" class="website-tab-close" data-close-tab="${escapeHTML(path)}" aria-label="Close ${escapeHTML(websiteFileName(path))}"><i class="ri-close-line" aria-hidden="true"></i></button>
+      </div>`).join("");
+    tabs.querySelectorAll("[data-website-tab]").forEach((tab) => {
+      tab.addEventListener("click", async (event) => {
         const closeTarget = event.target.closest("[data-close-tab]");
-        const path = button.dataset.websiteTab;
+        const path = tab.dataset.websiteTab;
         if (closeTarget) {
           if (path === state.websiteCurrentPath && !(await saveWebsiteFile(false))) return;
           state.websiteOpenTabs = state.websiteOpenTabs.filter((item) => item !== path);
@@ -1288,18 +1327,25 @@
   }
 
   async function renderWebsitePreview() {
-    await saveWebsiteFile(false);
+    if (!(await saveWebsiteFile(false))) {
+      websitePreviewStatus("Waiting for save", true);
+      return;
+    }
     const frame = app.querySelector("#website-preview-frame");
     if (!frame) return;
+    websitePreviewStatus("Updating…");
     const activeIndexPath = state.websiteCurrentPath && /(?:^|\/)index\.html$/i.test(state.websiteCurrentPath)
       ? state.websiteCurrentPath
       : "index.html";
     const previewEntry = state.websiteEntries.find((item) => item.path === activeIndexPath && item.kind === "file");
+    const domain = `${state.requests.find((item) => item.id === state.websiteRequestId)?.requested_label || "site"}.${rootDomain}`;
+    const previewUrl = app.querySelector("#website-preview-url");
+    if (previewUrl) previewUrl.textContent = `https://${domain}/${activeIndexPath}`;
     if (!previewEntry) {
-      frame.srcdoc = "<!doctype html><p style='font-family:Arial;padding:24px'>Create an <code>index.html</code> file to preview this folder. Root preview uses <code>/index.html</code>.</p>";
+      frame.srcdoc = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{font:14px/1.6 system-ui,sans-serif;color:#555;padding:32px;margin:0}code{font-family:ui-monospace,monospace;background:#f1f1f1;padding:2px 5px}</style></head><body>Create an <code>index.html</code> file to preview this site.</body></html>";
+      websitePreviewStatus("No index.html file");
       return;
     }
-    const domain = `${state.requests.find((item) => item.id === state.websiteRequestId)?.requested_label || "site"}.${rootDomain}`;
     try {
       const { file } = await getWebsiteFile(activeIndexPath);
       const html = new TextDecoder().decode(base64ToBytes(file.content_base64));
@@ -1332,9 +1378,9 @@
       }
       parsed.querySelectorAll("base").forEach((node) => node.remove());
       frame.srcdoc = `<!doctype html>${parsed.documentElement.outerHTML}`;
-      websiteStatus("Preview updated");
+      websitePreviewStatus("Preview updated");
     } catch (error) {
-      websiteStatus("Preview unavailable", true);
+      websitePreviewStatus("Preview unavailable", true);
       showNotice(error.message || "Could not build the preview.", "error");
     }
   }
@@ -1349,228 +1395,284 @@
     if (!domains.some((item) => item.id === state.websiteRequestId)) state.websiteRequestId = domains[0].id;
     const selected = domains.find((item) => item.id === state.websiteRequestId);
     const fullDomain = `${selected.requested_label}.${rootDomain}`;
-    if (!document.querySelector("#website-ide-styles")) {
-      const style = document.createElement("style");
-      style.id = "website-ide-styles";
-      style.textContent = `
-        .website-ide {
-          --ide-bg: #0d1117;
-          --ide-panel: #111821;
-          --ide-panel-2: #161f2b;
-          --ide-border: #263241;
-          --ide-text: #d7e0ea;
-          --ide-muted: #8795a6;
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-          min-height: calc(100vh - 132px);
-          overflow: hidden;
-          color: var(--ide-text);
-          background: var(--ide-bg);
-          border: 1px solid var(--ide-border);
-          border-radius: 12px;
-          box-shadow: 0 12px 36px rgba(0,0,0,.16);
-        }
-        .website-ide, .website-ide * { box-sizing: border-box; }
-        .website-ide-topbar {
-          position: relative;
-          z-index: 5;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          min-height: 56px;
-          padding: 9px 14px;
-          background: var(--ide-panel);
-          border-bottom: 1px solid var(--ide-border);
-        }
-        .website-ide-domain-controls { display:flex; align-items:center; gap:9px; min-width:0; }
-        .website-ide-domain-controls select {
-          max-width: min(62vw, 360px);
-          min-width: 150px;
-          color: var(--ide-text);
-          background: var(--ide-panel-2);
-          border: 1px solid var(--ide-border);
-          border-radius: 7px;
-          padding: 8px 30px 8px 10px;
-        }
-        .website-ide .website-info-button {
-          width: 30px; height: 30px; min-width: 30px; padding: 0;
-          color: var(--ide-muted); border: 1px solid var(--ide-border);
-          background: transparent; border-radius: 7px;
-        }
-        .website-ide-open-site {
-          color: #a9c7ff !important;
-          border: 1px solid var(--ide-border) !important;
-          background: transparent !important;
-          white-space: nowrap;
-        }
-        .website-ide-menu { position:relative; margin-left:auto; }
-        .website-ide-menu > summary {
-          display:flex; align-items:center; justify-content:center;
-          width:36px; height:36px; border:1px solid var(--ide-border);
-          border-radius:8px; color:var(--ide-text); background:var(--ide-panel-2);
-          cursor:pointer; list-style:none; font-size:23px; line-height:1;
-          letter-spacing:1px; user-select:none;
-        }
-        .website-ide-menu > summary::-webkit-details-marker { display:none; }
-        .website-ide-menu[open] > summary,
-        .website-ide-menu > summary:hover { background:#202c3b; border-color:#40536a; }
-        .website-ide-menu-popover {
-          position:absolute; top:43px; right:0; z-index:20;
-          display:flex; flex-direction:column; gap:4px;
-          width:210px; padding:7px;
-          background:#151e29; border:1px solid #344255;
-          border-radius:10px; box-shadow:0 14px 38px rgba(0,0,0,.42);
-        }
-        .website-ide-menu-popover .button {
-          width:100%; justify-content:flex-start; text-align:left;
-          color:var(--ide-text) !important; background:transparent !important;
-          border:0 !important; border-radius:6px; padding:9px 10px;
-        }
-        .website-ide-menu-popover .button:hover:not(:disabled) { background:#243244 !important; }
-        .website-ide-menu-popover .button:disabled { opacity:.38; }
-        .website-ide-menu-popover .website-menu-divider {
-          height:1px; margin:4px 2px; background:var(--ide-border);
-        }
-        .website-ide-menu-popover .website-save-status {
-          padding:5px 10px; color:var(--ide-muted); font-size:12px;
-        }
-        .website-ide-menu-popover .website-save-status[data-error="true"] { color:#ff8c8c; }
-        .website-ide-workbench {
-          display:grid; grid-template-columns:230px minmax(0,1fr);
-          flex:1; min-height:560px; height:calc(100vh - 190px);
-          background:var(--ide-bg);
-        }
-        .website-ide .website-explorer {
-          min-width:0; overflow:auto; padding:0;
-          background:var(--ide-panel); border-right:1px solid var(--ide-border);
-        }
-        .website-ide .website-pane-heading {
-          position:sticky; top:0; z-index:1;
-          display:flex; justify-content:space-between; gap:8px;
-          padding:13px 14px 11px; color:#aebdce;
-          background:var(--ide-panel); border-bottom:1px solid var(--ide-border);
-          font-size:11px; font-weight:700; letter-spacing:.09em;
-        }
-        .website-ide .website-pane-heading .small { color:var(--ide-muted); font-weight:400; letter-spacing:0; }
-        .website-ide .website-file-tree { padding:8px 7px; }
-        .website-ide .website-file-row {
-          display:flex; align-items:center; gap:8px; width:100%;
-          min-height:31px; padding:5px 8px 5px calc(8px + var(--tree-depth)*13px);
-          color:#b9c6d5; background:transparent; border:0; border-radius:5px;
-          text-align:left; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-          cursor:pointer;
-        }
-        .website-ide .website-file-row:hover { background:#1b2735; color:#eef5ff; }
-        .website-ide .website-file-row.is-selected { color:#fff; background:#203149; }
-        .website-ide .website-file-symbol { color:#8194aa; flex:none; }
-        .website-ide .website-empty-files { padding:8px; color:var(--ide-muted); }
-        .website-ide .website-code-area {
-          display:flex; flex-direction:column; min-width:0; min-height:0;
-          height:100%; background:var(--ide-bg);
-        }
-        .website-ide .website-open-tabs {
-          min-height:38px; background:#101720; border-bottom:1px solid var(--ide-border);
-        }
-        .website-ide .website-editor-wrap {
-          flex:1; min-height:480px; height:calc(100vh - 260px);
-          background:#0d1117; overflow:hidden;
-        }
-        .website-ide .website-monaco-editor { width:100%; height:100%; min-height:480px; }
-        .website-ide .website-editor-fallback {
-          width:100%; height:100%; min-height:480px; resize:none;
-          padding:16px; color:#d7e0ea; background:#0d1117;
-          border:0; outline:none; font:13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-          tab-size:2;
-        }
-        .website-ide .website-editor-placeholder,
-        .website-ide .website-binary-note {
-          padding:28px; color:#a9b7c7; background:#0d1117;
-          font:13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        }
-        .website-ide .website-editor-placeholder { min-height:100%; }
-        .website-ide .website-binary-note p { color:var(--ide-muted); }
-        .website-ide .website-statusbar {
-          display:flex; justify-content:space-between; gap:12px;
-          min-height:27px; padding:5px 12px; color:#aebbd0;
-          background:#17283b; border-top:1px solid #263b54;
-          font:11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        }
-        .website-ide .website-preview-area { display:none !important; }
-        @media (max-width:700px) {
-          .website-ide { min-height:calc(100vh - 100px); border-radius:8px; }
-          .website-ide-workbench { grid-template-columns:112px minmax(0,1fr); height:calc(100vh - 170px); }
-          .website-ide .website-pane-heading { padding:11px 8px; font-size:10px; }
-          .website-ide .website-pane-heading .small { display:none; }
-          .website-ide .website-file-row { font-size:11px; overflow:hidden; }
-          .website-ide-domain-controls select { min-width:0; max-width:52vw; font-size:12px; }
-          .website-ide .website-editor-wrap { height:calc(100vh - 230px); }
-        }
-      `;
-      document.head.appendChild(style);
+    // Remix Icon is loaded once and used for all editor controls and file types.
+    if (!document.querySelector("#website-remix-icons")) {
+      const iconStylesheet = document.createElement("link");
+      iconStylesheet.id = "website-remix-icons";
+      iconStylesheet.rel = "stylesheet";
+      iconStylesheet.href = "https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css";
+      document.head.appendChild(iconStylesheet);
     }
 
+    let style = document.querySelector("#website-ide-styles");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "website-ide-styles";
+    }
+    style.textContent = `
+      .website-ide {
+        --ide-bg: #1e1e1e;
+        --ide-panel: #252526;
+        --ide-panel-2: #333333;
+        --ide-border: #3c3c3c;
+        --ide-text: #cccccc;
+        --ide-muted: #9d9d9d;
+        --ide-accent: #007acc;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-width: 0;
+        min-height: calc(100vh - 140px);
+        overflow: hidden;
+        color: var(--ide-text);
+        background: var(--ide-bg);
+        border: 1px solid var(--ide-border);
+        border-radius: 3px;
+        box-shadow: none;
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .website-ide, .website-ide * { box-sizing: border-box; }
+      .website-ide button, .website-ide select { font: inherit; }
+      .website-ide button { cursor: pointer; }
+      .website-ide button:focus-visible, .website-ide a:focus-visible, .website-ide select:focus-visible {
+        outline: 1px solid #75beff; outline-offset: 1px;
+      }
+      .website-ide-topbar {
+        position: relative;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        min-height: 50px;
+        padding: 7px 10px;
+        background: var(--ide-panel);
+        border-bottom: 1px solid var(--ide-border);
+      }
+      .website-ide-domain-controls, .website-toolbar-actions {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0;
+      }
+      .website-ide-domain-controls select {
+        width: min(340px, 48vw);
+        min-width: 180px;
+        height: 32px;
+        padding: 0 28px 0 9px;
+        color: var(--ide-text);
+        background: #3c3c3c;
+        border: 1px solid #555555;
+        border-radius: 2px;
+      }
+      .website-ide-open-site, .website-toolbar-button, .website-icon-button {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        min-height: 30px; padding: 5px 9px;
+        color: var(--ide-text); background: #333333;
+        border: 1px solid #4a4a4a; border-radius: 2px;
+        text-decoration: none; white-space: nowrap;
+        transition: background-color .12s ease, border-color .12s ease;
+      }
+      .website-ide-open-site { color: #d7eaff; }
+      .website-toolbar-button:hover:not(:disabled), .website-icon-button:hover:not(:disabled), .website-ide-open-site:hover {
+        background: #3f3f3f; border-color: #666666;
+      }
+      .website-toolbar-button.is-primary {
+        color: #ffffff; background: #0e639c; border-color: #0e639c;
+      }
+      .website-toolbar-button.is-primary:hover:not(:disabled) { background: #1177bb; border-color: #1177bb; }
+      .website-toolbar-button.is-danger { color: #f1b9b9; }
+      .website-toolbar-button:disabled, .website-icon-button:disabled { opacity: .42; cursor: not-allowed; }
+      .website-toolbar-button i, .website-icon-button i, .website-ide-open-site i { font-size: 16px; line-height: 1; }
+      .website-toolbar-divider { width: 1px; height: 22px; margin: 0 3px; background: #454545; }
+      .website-save-status { color: #a9a9a9; padding: 0 5px; font-size: 12px; white-space: nowrap; }
+      .website-save-status[data-error="true"] { color: #f48771; }
+      .website-ide-workbench {
+        display: grid;
+        grid-template-columns: minmax(190px, 220px) minmax(360px, 1fr) minmax(300px, 34%);
+        flex: 1;
+        min-height: 620px;
+        height: calc(100vh - 195px);
+        background: var(--ide-bg);
+      }
+      .website-ide .website-explorer {
+        display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        overflow: auto; padding: 0;
+        background: var(--ide-panel); border-right: 1px solid var(--ide-border);
+      }
+      .website-ide .website-pane-heading {
+        position: sticky; top: 0; z-index: 1;
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        min-height: 40px; padding: 0 10px;
+        color: #cccccc; background: var(--ide-panel);
+        border-bottom: 1px solid var(--ide-border);
+        font-size: 12px; font-weight: 600; letter-spacing: 0;
+      }
+      .website-ide .website-pane-heading .small { color: var(--ide-muted); font-size: 11px; font-weight: 400; }
+      .website-explorer-actions { display: flex; align-items: center; gap: 2px; }
+      .website-explorer-actions .website-icon-button {
+        min-height: 25px; width: 26px; padding: 2px;
+        color: #bcbcbc; background: transparent; border-color: transparent;
+      }
+      .website-explorer-actions .website-icon-button:hover:not(:disabled) { background: #3a3d41; border-color: transparent; }
+      .website-ide .website-file-tree { flex: 1; padding: 5px 0 10px; overflow: auto; }
+      .website-ide .website-file-row {
+        display: flex; align-items: center; gap: 7px;
+        width: 100%; min-height: 25px;
+        padding: 3px 9px 3px calc(9px + var(--tree-depth) * 13px);
+        color: #cccccc; background: transparent; border: 0; border-radius: 0;
+        text-align: left; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        cursor: pointer;
+      }
+      .website-ide .website-file-row:hover { background: #2a2d2e; color: #ffffff; }
+      .website-ide .website-file-row.is-selected { color: #ffffff; background: #094771; }
+      .website-ide .website-file-icon { flex: none; width: 15px; font-size: 15px; color: #b5b5b5; }
+      .website-ide .website-file-row[data-entry-kind="folder"] .website-file-icon { color: #dcb67a; }
+      .website-ide .website-empty-files { padding: 12px; color: var(--ide-muted); }
+      .website-ide .website-code-area {
+        display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        height: 100%; overflow: hidden; background: var(--ide-bg);
+      }
+      .website-ide .website-open-tabs {
+        display: flex; align-items: stretch; flex: none;
+        min-height: 36px; overflow-x: auto; overflow-y: hidden;
+        background: #252526; border-bottom: 1px solid var(--ide-border);
+      }
+      .website-ide .website-tab {
+        display: inline-flex; align-items: center; gap: 2px;
+        min-width: 0; max-width: 230px; height: 36px; padding: 0 5px 0 9px;
+        color: #a8a8a8; background: #2d2d2d;
+        border: 0; border-right: 1px solid #252526; border-top: 1px solid transparent;
+        border-radius: 0; white-space: nowrap; font-size: 12px;
+      }
+      .website-ide .website-tab.is-active {
+        color: #ffffff; background: #1e1e1e; border-top: 1px solid var(--ide-accent);
+      }
+      .website-tab-select {
+        display: inline-flex; align-items: center; min-width: 0; height: 100%; padding: 0;
+        color: inherit; background: transparent; border: 0; text-align: left; font-size: 12px;
+      }
+      .website-tab-name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .website-tab-name > i { flex: none; font-size: 14px; }
+      .website-tab-close {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 20px; height: 20px; padding: 0; flex: none; border: 0;
+        border-radius: 2px; color: #bdbdbd; background: transparent;
+      }
+      .website-tab-close:hover { color: #ffffff; background: #454545; }
+      .website-ide .website-editor-wrap {
+        flex: 1; min-height: 480px; height: 100%;
+        background: #1e1e1e; overflow: hidden;
+      }
+      .website-ide .website-monaco-editor { width: 100%; height: 100%; min-height: 480px; }
+      .website-ide .website-editor-fallback {
+        width: 100%; height: 100%; min-height: 480px; resize: none;
+        padding: 14px 16px; color: #d4d4d4; background: #1e1e1e;
+        border: 0; border-radius: 0; outline: none;
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        tab-size: 2;
+      }
+      .website-ide .website-editor-placeholder, .website-ide .website-binary-note {
+        min-height: 100%; padding: 24px; color: #c5c5c5; background: #1e1e1e;
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .website-ide .website-binary-note p { color: var(--ide-muted); }
+      .website-ide .website-statusbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        flex: none; min-height: 23px; padding: 3px 9px;
+        color: #ffffff; background: #007acc; border: 0;
+        font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .website-ide .website-preview-area {
+        display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        overflow: hidden; background: #f3f3f3; border-left: 1px solid var(--ide-border);
+      }
+      .website-preview-heading {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        min-height: 40px; padding: 0 9px 0 12px;
+        color: #cccccc; background: var(--ide-panel); border-bottom: 1px solid var(--ide-border);
+        font-size: 12px; font-weight: 600;
+      }
+      .website-preview-heading-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .website-preview-url {
+        min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        color: #a8a8a8; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .website-preview-status { color: #9d9d9d; font-size: 11px; font-weight: 400; white-space: nowrap; }
+      .website-preview-status[data-error="true"] { color: #f48771; }
+      .website-preview-refresh {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 27px; height: 27px; color: #cccccc; background: transparent;
+        border: 1px solid transparent; border-radius: 2px;
+      }
+      .website-preview-refresh:hover { background: #3a3d41; }
+      .website-preview-refresh i { font-size: 16px; }
+      .website-ide .website-preview-frame {
+        display: block; flex: 1; width: 100%; min-height: 0;
+        border: 0; background: #ffffff;
+      }
+      @media (max-width: 1120px) {
+        .website-ide-workbench {
+          grid-template-columns: 190px minmax(0, 1fr);
+          grid-template-rows: minmax(500px, 1fr) 360px;
+          height: auto; min-height: 0;
+        }
+        .website-ide .website-explorer { grid-column: 1; grid-row: 1 / span 2; }
+        .website-ide .website-code-area { grid-column: 2; grid-row: 1; min-height: 500px; }
+        .website-ide .website-preview-area { grid-column: 2; grid-row: 2; min-height: 360px; border-top: 1px solid var(--ide-border); border-left: 0; }
+      }
+      @media (max-width: 720px) {
+        .website-ide { min-height: 0; }
+        .website-ide-topbar { align-items: stretch; padding: 8px; }
+        .website-ide-domain-controls, .website-toolbar-actions { width: 100%; }
+        .website-ide-domain-controls select { width: 100%; max-width: none; min-width: 0; flex: 1; }
+        .website-toolbar-actions { justify-content: flex-start; }
+        .website-toolbar-button { padding: 5px 7px; font-size: 12px !important; }
+        .website-save-status { margin-left: auto; }
+        .website-ide-workbench {
+          display: grid; grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto minmax(500px, 1fr) minmax(360px, 45vh);
+        }
+        .website-ide .website-explorer { grid-column: 1; grid-row: 1; max-height: 190px; border-right: 0; border-bottom: 1px solid var(--ide-border); }
+        .website-ide .website-code-area { grid-column: 1; grid-row: 2; min-height: 500px; }
+        .website-ide .website-preview-area { grid-column: 1; grid-row: 3; min-height: 360px; border-top: 1px solid var(--ide-border); }
+        .website-ide .website-editor-wrap, .website-ide .website-monaco-editor, .website-ide .website-editor-fallback { min-height: 460px; }
+      }
+    `;
+    if (!style.isConnected) document.head.appendChild(style);
+
     app.innerHTML = `
-      <section class="website-ide">
+      <section class="website-ide" aria-label="Website code editor">
         <header class="website-ide-topbar">
           <div class="website-ide-domain-controls">
             <select id="website-domain-select" aria-label="Select subdomain">${domains.map((item) => `<option value="${escapeHTML(item.id)}" ${item.id === selected.id ? "selected" : ""}>${escapeHTML(item.requested_label)}.${escapeHTML(rootDomain)}</option>`).join("")}</select>
-            <button class="button button-small button-quiet website-info-button" id="website-info" type="button" aria-label="Website editor information" title="What is this?">i</button>
-            <a class="button button-secondary button-small website-ide-open-site" href="https://${escapeHTML(fullDomain)}/" target="_blank" rel="noopener noreferrer" ${selected.website_published ? "" : "hidden"}>Open site ↗</a>
+            <a class="website-ide-open-site" href="https://${escapeHTML(fullDomain)}/" target="_blank" rel="noopener noreferrer" ${selected.website_published ? "" : "hidden"}><i class="ri-external-link-line" aria-hidden="true"></i><span>Open site</span></a>
           </div>
-          <details class="website-ide-menu">
-            <summary aria-label="Website actions" title="Website actions">⋮</summary>
-            <div class="website-ide-menu-popover">
-              <button class="button button-small" id="website-new-file" type="button">＋ New file</button>
-              <button class="button button-small" id="website-upload-file" type="button">↑ Upload file</button>
-              <button class="button button-small" id="website-new-folder" type="button">＋ New folder</button>
-              <button class="button button-small" id="website-delete-entry" type="button" disabled>⌫ Delete selected</button>
-              <div class="website-menu-divider"></div>
-              <span id="website-save-status" class="website-save-status">Saved</span>
-              <button class="button button-small" id="website-save" type="button">Save changes</button>
-              <button class="button button-small ${selected.website_published ? "button-danger" : "button-primary"}" id="website-publish" type="button">${selected.website_published ? "Unpublish site" : "Publish site"}</button>
-              <button class="button button-small" id="website-refresh-preview" type="button">Refresh preview</button>
-            </div>
-          </details>
+          <div class="website-toolbar-actions" aria-label="Website actions">
+            <button class="website-toolbar-button" id="website-new-file" type="button"><i class="ri-file-add-line" aria-hidden="true"></i><span>New file</span></button>
+            <button class="website-toolbar-button" id="website-upload-file" type="button"><i class="ri-upload-2-line" aria-hidden="true"></i><span>Upload</span></button>
+            <span class="website-toolbar-divider" aria-hidden="true"></span>
+            <span id="website-save-status" class="website-save-status" role="status" aria-live="polite">Saved</span>
+            <button class="website-toolbar-button" id="website-save" type="button"><i class="ri-save-3-line" aria-hidden="true"></i><span>Save</span></button>
+            <button class="website-toolbar-button is-primary" id="website-publish" type="button"><i class="${selected.website_published ? "ri-stop-circle-line" : "ri-rocket-line"}" aria-hidden="true"></i><span>${selected.website_published ? "Unpublish" : "Publish"}</span></button>
+          </div>
           <input id="website-upload-input" type="file" hidden>
         </header>
         <div class="website-ide-workbench">
-          <aside class="website-explorer">
-            <div class="website-pane-heading"><span>EXPLORER</span><span class="small">${state.websiteEntries.length} items</span></div>
+          <aside class="website-explorer" aria-label="Site files">
+            <div class="website-pane-heading"><span>Files</span><span class="small">${state.websiteEntries.length} items</span><span class="website-explorer-actions"><button class="website-icon-button" id="website-new-folder" type="button" aria-label="New folder" title="New folder"><i class="ri-folder-add-line" aria-hidden="true"></i></button><button class="website-icon-button" id="website-delete-entry" type="button" aria-label="Delete selected file or folder" title="Delete selected" disabled><i class="ri-delete-bin-6-line" aria-hidden="true"></i></button></span></div>
             <div id="website-file-tree" class="website-file-tree"><p class="small">Loading files…</p></div>
           </aside>
-          <section class="website-code-area">
-            <div id="website-open-tabs" class="website-open-tabs"></div>
+          <section class="website-code-area" aria-label="Source editor">
+            <div id="website-open-tabs" class="website-open-tabs" role="tablist" aria-label="Open files"></div>
             <div id="website-editor-wrap" class="website-editor-wrap"><div class="website-editor-placeholder">Loading your files…</div></div>
             <div class="website-statusbar"><span>${escapeHTML(fullDomain)}</span><span id="website-language-status">HTML</span></div>
           </section>
-          <section class="website-preview-area" aria-hidden="true">
-            <iframe id="website-preview-frame" title="Website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:Arial;padding:24px'>Loading preview…</p>"></iframe>
+          <section class="website-preview-area" aria-label="Live website preview">
+            <div class="website-preview-heading"><span>Preview</span><div class="website-preview-heading-actions"><span id="website-preview-url" class="website-preview-url">https://${escapeHTML(fullDomain)}/index.html</span><span id="website-preview-status" class="website-preview-status" role="status" aria-live="polite">Loading</span><button class="website-preview-refresh" id="website-refresh-preview" type="button" aria-label="Refresh preview" title="Refresh preview"><i class="ri-refresh-line" aria-hidden="true"></i></button></div></div>
+            <iframe id="website-preview-frame" class="website-preview-frame" title="Live website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:system-ui;padding:24px;color:#555'>Loading preview…</p>"></iframe>
           </section>
         </div>
       </section>
     `;
-
-    app.querySelector(".website-ide-menu")?.addEventListener("click", (event) => {
-      if (event.target.closest("button")) {
-        queueMicrotask(() => {
-          const menu = app.querySelector(".website-ide-menu");
-          if (menu) menu.open = false;
-        });
-      }
-    });
-
-    app.querySelector("#website-info")?.addEventListener("click", () => {
-      const popup = document.createElement("dialog");
-      popup.className = "website-info-dialog";
-      popup.innerHTML = `<div class="website-info-dialog-content"><button class="button button-small button-quiet website-info-close" type="button" aria-label="Close">×</button><h2>What is this?</h2><p>if you dont know how to do the dns thing use this to directly edit the code of your page.</p></div>`;
-      document.body.appendChild(popup);
-      popup.addEventListener("click", (event) => { if (event.target === popup) popup.close(); });
-      popup.querySelector(".website-info-close")?.addEventListener("click", () => popup.close());
-      popup.addEventListener("close", () => popup.remove(), { once: true });
-      popup.showModal();
-    });
 
     app.querySelector("#website-domain-select")?.addEventListener("change", async (event) => {
       if (!(await saveWebsiteFile(false))) return;
@@ -1583,7 +1685,9 @@
       renderCurrentView();
     });
 
-    app.querySelector("#website-save")?.addEventListener("click", () => saveWebsiteFile(true));
+    app.querySelector("#website-save")?.addEventListener("click", async () => {
+      if (await saveWebsiteFile(true)) await renderWebsitePreview();
+    });
     app.querySelector("#website-refresh-preview")?.addEventListener("click", renderWebsitePreview);
     app.querySelector("#website-new-file")?.addEventListener("click", async () => {
       const name = window.prompt("New file name (example: about.html):");
@@ -1609,6 +1713,7 @@
         state.websiteSelectedFolder = cleanFolder;
         renderWebsiteTree();
         await openWebsiteFile(path);
+        await renderWebsitePreview();
       } catch (error) { showNotice(error.message || "Could not create the file.", "error"); }
     });
     app.querySelector("#website-new-folder")?.addEventListener("click", async () => {
@@ -1682,6 +1787,7 @@
         }
         renderWebsiteTabs();
         renderWebsiteTree();
+        await renderWebsitePreview();
         showNotice(folder ? "Folder and contents deleted." : "File deleted.", "success");
       } catch (error) { showNotice(error.message || "Could not delete the selected item.", "error"); }
     });
@@ -1717,7 +1823,7 @@
       if (firstFile) await openWebsiteFile(firstFile.path);
       await renderWebsitePreview();
       if (selected.website_published) websiteStatus("Published");
-      else websiteStatus("Saved · not published");
+      else websiteStatus("Saved — not published");
     } catch (error) {
       const tree = app.querySelector("#website-file-tree");
       if (tree) tree.innerHTML = `<p class="inline-note">Could not load website files: ${escapeHTML(error.message || "Unknown error")}</p>`;

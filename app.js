@@ -15,6 +15,7 @@
     user: null,
     role: "user",
     requests: [],
+    inviteCodes: [],
     section: "dns",
     authMode: "landing",
     passwordRecovery: false,
@@ -194,6 +195,7 @@
     state.session = null;
     state.user = null;
     state.requests = [];
+    state.inviteCodes = [];
     state.role = "user";
     state.section = "dns";
     state.authMode = "landing";
@@ -239,6 +241,7 @@
     sidebar.querySelectorAll("[data-section]").forEach((button) => {
       button.addEventListener("click", async () => {
         const nextSection = button.dataset.section;
+        if (state.section === "admin" && nextSection !== "admin") state.inviteCodes = [];
         if (state.section === "website" && nextSection !== "website") {
           await saveWebsiteFile(false);
           cleanupWebsiteEditor();
@@ -264,6 +267,10 @@
       return;
     }
 
+    if (state.authMode === "invite") {
+      renderInviteCode();
+      return;
+    }
     if (state.authMode === "signin" || state.authMode === "reset") {
       renderAuth();
       return;
@@ -431,7 +438,7 @@
           ${isReset ? "" : `<div class="field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>`}
           <div class="actions"><button class="button button-primary" type="submit">${isReset ? "Send reset link" : "Log in"}</button><button class="button button-quiet" type="button" id="back-home">Back to home</button>${isReset ? "" : `<button class="text-button" type="button" id="forgot-password">Forgot password?</button>`}</div>
         </form>
-        ${isReset ? "" : `<div class="auth-passkey-divider"><span>or</span></div><button class="button button-secondary" id="signin-passkey" type="button">Sign in with a passkey</button><p class="small">Use a passkey saved on this device or in your password manager.</p>`}
+        ${isReset ? "" : `<div class="auth-passkey-divider"><span>or</span></div><button class="button button-secondary" id="signin-passkey" type="button">Sign in with a passkey</button><p class="small">Use a passkey saved on this device or in your password manager.</p><div class="auth-invite-option"><p class="small">New here? An invite code is required to create an account.</p><button class="button button-quiet" id="open-invite-screen" type="button">Use an invite code</button></div>`}
       </section>`;
 
     app.querySelector("#auth-form")?.addEventListener("submit", async (event) => {
@@ -464,6 +471,7 @@
     app.querySelector("#back-home")?.addEventListener("click", () => { state.authMode = "landing"; renderPublic(); });
     const forgot = app.querySelector("#forgot-password");
     if (forgot) forgot.addEventListener("click", () => { state.authMode = "reset"; renderPublic(); });
+    app.querySelector("#open-invite-screen")?.addEventListener("click", () => { state.authMode = "invite"; renderPublic(); });
 
     app.querySelector("#signin-passkey")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -489,16 +497,99 @@
     });
   }
 
+  function renderInviteCode() {
+    app.innerHTML = `
+      <section class="auth-card invite-auth-card">
+        <div class="brand-mark brand-mark-small">${colorText("is-aroace")}</div>
+        <div class="accent-rule" aria-hidden="true"></div>
+        <div class="page-heading">
+          <h1>Join with an invite code</h1>
+          <p class="lede">Enter your invite code and email address. We’ll send you a secure account setup link.</p>
+        </div>
+        <form id="invite-redeem-form" class="form">
+          <div class="field">
+            <label for="invite-code-input">Invite code</label>
+            <input id="invite-code-input" name="code" type="text" required maxlength="64" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ARO-SLUG-XXXX-XXXX-ACE" aria-describedby="invite-code-help">
+            <span class="field-hint" id="invite-code-help">Codes are case-insensitive. Keep the full code, including its dashes.</span>
+          </div>
+          <div class="field">
+            <label for="invite-email-input">Email address</label>
+            <input id="invite-email-input" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com">
+          </div>
+          <p class="small" id="invite-redeem-status" role="status" aria-live="polite"></p>
+          <div class="actions">
+            <button class="button button-primary" type="submit">Continue with invite</button>
+            <button class="button button-quiet" id="invite-back-login" type="button">Back to log in</button>
+          </div>
+        </form>
+      </section>`;
+
+    const form = app.querySelector("#invite-redeem-form");
+    const codeInput = app.querySelector("#invite-code-input");
+    const status = app.querySelector("#invite-redeem-status");
+    codeInput?.addEventListener("input", () => {
+      const start = codeInput.selectionStart;
+      const before = codeInput.value;
+      const normalized = before.toUpperCase().replace(/\s+/g, "");
+      if (normalized !== before) {
+        codeInput.value = normalized;
+        try { codeInput.setSelectionRange(start, start); } catch {}
+      }
+    });
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const code = String(values.get("code") || "").trim().toUpperCase().replace(/\s+/g, "");
+      const email = String(values.get("email") || "").trim().toLowerCase();
+      const validFormat = /^ARO(?:-[A-Z0-9]+(?:-[A-Z0-9]+)*)?-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-ACE$/i.test(code);
+      if (!validFormat) {
+        status.textContent = "That invite code format doesn’t look right. Check the code and try again.";
+        status.dataset.state = "error";
+        codeInput?.focus();
+        return;
+      }
+      const button = form.querySelector("button[type='submit']");
+      button.disabled = true;
+      status.textContent = "Checking your invite and sending the email…";
+      status.dataset.state = "pending";
+      try {
+        const { data, error } = await state.client.functions.invoke("manage-invite-codes", {
+          body: { action: "redeem", code, email }
+        });
+        if (error) {
+          let detail = error.message || "Could not process this invite.";
+          try { const payload = await error.context?.json(); if (payload?.error) detail = payload.error; } catch {}
+          throw new Error(detail);
+        }
+        if (!data?.success) throw new Error(data?.error || "This invite could not be used.");
+        form.innerHTML = `
+          <div class="inline-note" data-state="success">
+            <strong>Check your inbox</strong>
+            <p>${escapeHTML(data.message || "If the code and email are eligible, an account invitation has been sent.")}</p>
+            <p class="small">Open the invitation on this email account to finish setting up your login.</p>
+          </div>
+          <button class="button button-secondary" id="invite-finished-login" type="button">Back to log in</button>`;
+        app.querySelector("#invite-finished-login")?.addEventListener("click", () => { state.authMode = "signin"; renderPublic(); });
+      } catch (error) {
+        status.textContent = error.message || "Could not process this invite.";
+        status.dataset.state = "error";
+        button.disabled = false;
+      }
+    });
+    app.querySelector("#invite-back-login")?.addEventListener("click", () => { state.authMode = "signin"; renderPublic(); });
+  }
+
   function renderPasswordUpdate() {
+    const isInviteSetup = Boolean(state.user?.user_metadata?.invited_via_code && !state.user?.user_metadata?.invite_password_set);
     app.innerHTML = `
       <section class="auth-card password-recovery-card">
         <div class="brand-mark brand-mark-small">${colorText("is-aroace")}</div>
         <div class="accent-rule" aria-hidden="true"></div>
-        <div class="page-heading"><h1>Choose a new password</h1><p class="lede">Your reset link is verified. Set a new password for your account.</p></div>
+        <div class="page-heading"><h1>${isInviteSetup ? "Set your account password" : "Choose a new password"}</h1><p class="lede">${isInviteSetup ? "Your invitation is verified. Choose a password to finish setting up your account." : "Your reset link is verified. Set a new password for your account."}</p></div>
         <form id="password-update-form" class="form">
           <div class="field"><label for="new-password">New password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
           <div class="field"><label for="confirm-password">Confirm new password</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
-          <div class="actions"><button class="button button-primary" type="submit">Update password</button><button class="button button-quiet" id="recovery-cancel" type="button">Back to home</button></div>
+          <div class="actions"><button class="button button-primary" type="submit">Update password</button>${isInviteSetup ? "" : `<button class="button button-quiet" id="recovery-cancel" type="button">Back to home</button>`}</div>
         </form>
       </section>`;
 
@@ -513,8 +604,13 @@
       button.disabled = true;
       button.textContent = "Updating…";
       try {
-        const { error } = await state.client.auth.updateUser({ password });
+        const updatePayload = { password };
+        if (isInviteSetup) {
+          updatePayload.data = { ...(state.user?.user_metadata || {}), invite_password_set: true };
+        }
+        const { data: updatedUser, error } = await state.client.auth.updateUser(updatePayload);
         if (error) throw error;
+        if (updatedUser?.user) state.user = updatedUser.user;
         state.passwordRecovery = false;
         state.authMode = "landing";
         showNotice("Your password has been updated.", "success");
@@ -2046,6 +2142,135 @@
     });
   }
 
+  async function invokeInviteCodeFunction(body) {
+    const { data, error } = await state.client.functions.invoke("manage-invite-codes", { body });
+    if (error) {
+      let detail = error.message || "Invite code operation failed.";
+      try { const payload = await error.context?.json(); if (payload?.error) detail = payload.error; } catch {}
+      throw new Error(detail);
+    }
+    if (!data?.success) throw new Error(data?.error || "Invite code operation failed.");
+    return data;
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const temporary = document.createElement("textarea");
+    temporary.value = value;
+    temporary.setAttribute("readonly", "");
+    temporary.style.position = "fixed";
+    temporary.style.opacity = "0";
+    document.body.appendChild(temporary);
+    temporary.select();
+    const copied = document.execCommand("copy");
+    temporary.remove();
+    if (!copied) throw new Error("Clipboard access is unavailable in this browser.");
+  }
+
+  function inviteValidity(invite) {
+    if (invite.revoked_at) return { label: "Revoked", className: "status-muted" };
+    if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) return { label: "Expired", className: "status-muted" };
+    if (Number(invite.uses_count) >= Number(invite.max_uses)) return { label: "Used up", className: "status-pending" };
+    return { label: "Active", className: "status-approved" };
+  }
+
+  function renderInviteCodeList(invites) {
+    const list = app.querySelector("#invite-code-list");
+    if (!list) return;
+    if (!invites.length) {
+      list.innerHTML = `<p class="empty compact-empty">No invite codes yet. Create one above.</p>`;
+      return;
+    }
+    list.innerHTML = invites.map((invite) => {
+      const validity = inviteValidity(invite);
+      const uses = Number(invite.uses_count) || 0;
+      const max = Number(invite.max_uses) || 0;
+      const expiry = invite.expires_at ? new Date(invite.expires_at).toLocaleString() : "Never";
+      const canRevoke = validity.label === "Active";
+      return `
+        <article class="invite-code-row">
+          <div class="invite-code-main">
+            <code class="invite-code-value">${escapeHTML(invite.code || "Code unavailable")}</code>
+            <span class="status ${validity.className}">${validity.label}</span>
+          </div>
+          <div class="invite-code-meta">
+            <span><strong>Uses</strong> ${uses} / ${max}</span>
+            <span><strong>Expires</strong> ${escapeHTML(expiry)}</span>
+            <span><strong>Created</strong> ${escapeHTML(new Date(invite.created_at).toLocaleString())}</span>
+            <span><strong>Slug</strong> ${escapeHTML(invite.slug || "None")}</span>
+          </div>
+          <div class="actions invite-code-actions">
+            <button class="button button-secondary button-small" type="button" data-copy-invite="${escapeHTML(invite.id)}">Copy code</button>
+            ${canRevoke ? `<button class="button button-quiet button-small" type="button" data-revoke-invite="${escapeHTML(invite.id)}">Revoke</button>` : ""}
+          </div>
+        </article>`;
+    }).join("");
+
+    list.querySelectorAll("[data-copy-invite]").forEach((button) => button.addEventListener("click", async () => {
+      const invite = state.inviteCodes.find((item) => item.id === button.dataset.copyInvite);
+      if (!invite?.code) return showNotice("This invite code could not be retrieved. Check the encryption secret on the Edge Function.", "error");
+      try {
+        await copyText(invite.code);
+        const original = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400);
+      } catch (error) { showNotice(error.message || "Could not copy invite code.", "error"); }
+    }));
+    list.querySelectorAll("[data-revoke-invite]").forEach((button) => button.addEventListener("click", async () => {
+      const invite = state.inviteCodes.find((item) => item.id === button.dataset.revokeInvite);
+      if (!invite || !window.confirm(`Revoke ${invite.code}? Anyone who has not used it will no longer be able to redeem it.`)) return;
+      button.disabled = true;
+      try {
+        await invokeInviteCodeFunction({ action: "revoke", id: invite.id });
+        showNotice("Invite code revoked.", "success");
+        await loadInviteCodes();
+      } catch (error) {
+        button.disabled = false;
+        showNotice(error.message || "Could not revoke invite code.", "error");
+      }
+    }));
+  }
+
+  async function loadInviteCodes() {
+    const list = app.querySelector("#invite-code-list");
+    if (list) list.innerHTML = `<p class="small">Loading invite codes…</p>`;
+    try {
+      const data = await invokeInviteCodeFunction({ action: "list" });
+      state.inviteCodes = Array.isArray(data.invites) ? data.invites : [];
+      renderInviteCodeList(state.inviteCodes);
+    } catch (error) {
+      if (list) list.innerHTML = `<p class="inline-note">${escapeHTML(error.message || "Could not load invite codes.")}</p>`;
+    }
+  }
+
+  function setupInviteCodeManager() {
+    if (!document.querySelector("#invite-code-admin-styles")) {
+      const style = document.createElement("style");
+      style.id = "invite-code-admin-styles";
+      style.textContent = `
+        .invite-code-admin { display:grid; gap:16px; }
+        .invite-code-create-grid { display:grid; grid-template-columns:minmax(150px,1fr) minmax(130px,.7fr); gap:12px; }
+        .invite-code-expiry { display:flex; align-items:center; gap:8px; }
+        .invite-code-expiry input { width:16px; height:16px; }
+        .invite-code-expiry-field[hidden] { display:none; }
+        .invite-code-list { display:grid; gap:10px; margin-top:14px; }
+        .invite-code-row { display:grid; gap:10px; padding:14px; border:1px solid var(--border, #d9dee7); border-radius:8px; background:var(--surface, transparent); }
+        .invite-code-main { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+        .invite-code-value { overflow-wrap:anywhere; font-size:13px; letter-spacing:.035em; }
+        .invite-code-meta { display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted, #667085); font-size:12px; }
+        .invite-code-meta strong { color:inherit; font-weight:600; }
+        .invite-code-actions { margin:0; }
+        .auth-invite-option { margin-top:14px; padding-top:10px; border-top:1px solid var(--border, #d9dee7); }
+        .invite-auth-card .field-hint { display:block; margin-top:5px; }
+        @media (max-width:600px) { .invite-code-create-grid { grid-template-columns:1fr; } }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
   function safeLink(url) {
     const checked = validOptionalUrl(url);
     if (checked.error || !checked.value) return "—";
@@ -2078,8 +2303,80 @@
       <div class="page-heading"><h1>Applications</h1><p class="lede">Review requests, follow preview links, and approve subdomains.</p></div>
       <div class="stats"><div class="stat"><div class="stat-value">${pending}</div><div class="stat-label">Pending requests</div></div><div class="stat"><div class="stat-value">${approved}</div><div class="stat-label">Approved subdomains</div></div></div>
       <section class="section panel-section"><div class="section-header-row"><div><h2>Request notifications</h2><p class="small">Get a push notification when a new application arrives, even when this website is closed.</p></div><div class="actions"><button id="enable-admin-push" class="button button-secondary button-small" ${pushReady ? "" : "disabled"}>${pushLabel}</button><button id="test-admin-push" class="button button-quiet button-small" ${pushReady ? "" : "disabled"}>Send test notification</button></div></div><p class="small" id="admin-push-status" aria-live="polite">${pushReady ? "Enable notifications on each device where you want to receive new-request alerts, then send a test." : escapeHTML(pushUnavailableMessage()) + " The site owner must also configure the public VAPID key and deploy the push functions."}</p></section>
+      <section class="section panel-section invite-code-admin">
+        <div class="section-header-row"><div><h2>Invite codes</h2><p class="small">Create one-time or reusable invitations. Expired and exhausted codes cannot be redeemed.</p></div><button class="button button-quiet button-small" id="refresh-invite-codes" type="button">Refresh list</button></div>
+        <form id="create-invite-code-form" class="form">
+          <div class="invite-code-create-grid">
+            <div class="field"><label for="invite-code-slug">Slug <span class="optional-label">Optional</span></label><input id="invite-code-slug" name="slug" maxlength="20" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="community"></div>
+            <div class="field"><label for="invite-code-max-uses">How many people can use it?</label><input id="invite-code-max-uses" name="max_uses" type="number" min="1" max="1000000" step="1" value="1" required></div>
+          </div>
+          <label class="invite-code-expiry"><input id="invite-code-never-expires" type="checkbox" checked> Never expires</label>
+          <div class="field invite-code-expiry-field" id="invite-code-expiry-field" hidden><label for="invite-code-expires-at">Deadline</label><input id="invite-code-expires-at" name="expires_at" type="datetime-local"></div>
+          <div class="actions"><button class="button button-primary" type="submit">Generate invite code</button><span class="small" id="invite-code-create-status" role="status" aria-live="polite"></span></div>
+        </form>
+        <div id="invite-code-list" class="invite-code-list"><p class="small">Loading invite codes…</p></div>
+      </section>
       <section class="section panel-section"><div class="table-wrap"><table><thead><tr><th>Requested domain</th><th>Email</th><th>Purpose</th><th>Preview</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div></section>
       <hr class="rule"><section class="section panel-section"><div class="section-header-row"><div><h2>DNS API connection</h2><p class="small">Check the server-side deSEC token and zone.</p></div><button id="test-dns" class="button button-secondary">Test deSEC connection</button></div><span id="dns-test-result" class="small" aria-live="polite">Not tested yet.</span></section>`;
+
+    setupInviteCodeManager();
+    const inviteNeverExpires = app.querySelector("#invite-code-never-expires");
+    const inviteExpiryField = app.querySelector("#invite-code-expiry-field");
+    const inviteExpiryInput = app.querySelector("#invite-code-expires-at");
+    const inviteCreateForm = app.querySelector("#create-invite-code-form");
+    const inviteCreateStatus = app.querySelector("#invite-code-create-status");
+    const syncInviteExpiry = () => {
+      const never = Boolean(inviteNeverExpires?.checked);
+      if (inviteExpiryField) inviteExpiryField.hidden = never;
+      if (inviteExpiryInput) inviteExpiryInput.required = !never;
+    };
+    inviteNeverExpires?.addEventListener("change", syncInviteExpiry);
+    syncInviteExpiry();
+    app.querySelector("#refresh-invite-codes")?.addEventListener("click", loadInviteCodes);
+    inviteCreateForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = new FormData(inviteCreateForm);
+      const slug = String(values.get("slug") || "").trim().toLowerCase();
+      const maxUses = Number(values.get("max_uses"));
+      const neverExpires = Boolean(inviteNeverExpires?.checked);
+      const expiresLocal = String(values.get("expires_at") || "");
+      if (slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+        inviteCreateStatus.textContent = "Use lowercase letters and numbers, with single hyphens between words.";
+        return;
+      }
+      if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000000) {
+        inviteCreateStatus.textContent = "Choose a usage limit between 1 and 1,000,000.";
+        return;
+      }
+      let expiresAt = null;
+      if (!neverExpires) {
+        if (!expiresLocal) { inviteCreateStatus.textContent = "Choose an expiration date and time."; return; }
+        const expiryDate = new Date(expiresLocal);
+        if (!Number.isFinite(expiryDate.getTime()) || expiryDate.getTime() <= Date.now()) {
+          inviteCreateStatus.textContent = "The deadline must be in the future.";
+          return;
+        }
+        expiresAt = expiryDate.toISOString();
+      }
+      const submit = inviteCreateForm.querySelector("button[type='submit']");
+      submit.disabled = true;
+      inviteCreateStatus.textContent = "Generating a secure code…";
+      try {
+        const data = await invokeInviteCodeFunction({ action: "create", slug: slug || null, maxUses, expiresAt });
+        inviteCreateStatus.textContent = `Created ${data.invite?.code || "invite code"}.`;
+        inviteCreateForm.reset();
+        if (inviteNeverExpires) inviteNeverExpires.checked = true;
+        const maxInput = app.querySelector("#invite-code-max-uses");
+        if (maxInput) maxInput.value = "1";
+        syncInviteExpiry();
+        await loadInviteCodes();
+        showNotice("Invite code created. It is available in the list below to copy.", "success");
+      } catch (error) {
+        inviteCreateStatus.textContent = error.message || "Could not create invite code.";
+        showNotice(inviteCreateStatus.textContent, "error");
+      } finally { submit.disabled = false; }
+    });
+    loadInviteCodes();
 
     app.querySelector("#enable-admin-push")?.addEventListener("click", async (pushEvent) => {
       const button = pushEvent.currentTarget;
@@ -2237,6 +2534,11 @@
         setTimeout(() => renderPublic(), 0);
         return;
       }
+      if (state.user?.user_metadata?.invited_via_code && !state.user?.user_metadata?.invite_password_set) {
+        state.authMode = "password-update";
+        setTimeout(() => renderPublic(), 0);
+        return;
+      }
       if (!state.user) {
         if (event === "SIGNED_OUT") state.authMode = "landing";
         if (state.notificationPoll) clearInterval(state.notificationPoll);
@@ -2253,6 +2555,9 @@
     if (error) { showNotice(error.message, "error"); renderPublic(); return; }
     state.session = data.session;
     state.user = data.session?.user || null;
+    if (state.user?.user_metadata?.invited_via_code && !state.user?.user_metadata?.invite_password_set) {
+      state.authMode = "password-update";
+    }
     if (state.passwordRecovery || state.authMode === "password-update") renderPublic();
     else if (state.user) await renderCurrentView(); else renderPublic();
   }

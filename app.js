@@ -17,6 +17,7 @@
     requests: [],
     section: "dns",
     authMode: "landing",
+    passwordRecovery: false,
     prefillLabel: "",
     noticeTimer: null,
     notificationChannel: null,
@@ -196,6 +197,7 @@
     state.role = "user";
     state.section = "dns";
     state.authMode = "landing";
+    state.passwordRecovery = false;
     state.notificationReady = false;
     state.notificationWatermark = null;
     state.notifiedIds.clear();
@@ -264,6 +266,10 @@
 
     if (state.authMode === "signin" || state.authMode === "reset") {
       renderAuth();
+      return;
+    }
+    if (state.authMode === "password-update") {
+      renderPasswordUpdate();
       return;
     }
     if (state.authMode === "request") {
@@ -419,12 +425,13 @@
       <section class="auth-card">
         <div class="brand-mark brand-mark-small">${colorText("is-aroace")}</div>
         <div class="accent-rule" aria-hidden="true"></div>
-        <div class="page-heading"><h1>${isReset ? "Reset password" : "Log in"}</h1><p class="lede">${isReset ? "Enter the email address on your account." : `Welcome back to ${escapeHTML(rootDomain)}.`}</p></div>
+        <div class="page-heading"><h1>${isReset ? "Reset password" : "Log in"}</h1><p class="lede">${isReset ? "Enter the email address on your account and we’ll send a secure reset link." : `Welcome back to ${escapeHTML(rootDomain)}.`}</p></div>
         <form id="auth-form" class="form">
           <div class="field"><label for="auth-email">Email address</label><input id="auth-email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com"></div>
           ${isReset ? "" : `<div class="field"><label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="current-password" required></div>`}
           <div class="actions"><button class="button button-primary" type="submit">${isReset ? "Send reset link" : "Log in"}</button><button class="button button-quiet" type="button" id="back-home">Back to home</button>${isReset ? "" : `<button class="text-button" type="button" id="forgot-password">Forgot password?</button>`}</div>
         </form>
+        ${isReset ? "" : `<div class="auth-passkey-divider"><span>or</span></div><button class="button button-secondary" id="signin-passkey" type="button">Sign in with a passkey</button><p class="small">Use a passkey saved on this device or in your password manager.</p>`}
       </section>`;
 
     app.querySelector("#auth-form")?.addEventListener("submit", async (event) => {
@@ -435,9 +442,10 @@
       button.disabled = true;
       try {
         if (isReset) {
-          const { error } = await state.client.auth.resetPasswordForEmail(email, { redirectTo: window.location.href.split("#")[0] });
+          const redirectTo = `${window.location.origin}${window.location.pathname}`;
+          const { error } = await state.client.auth.resetPasswordForEmail(email, { redirectTo });
           if (error) throw error;
-          showNotice("If that account exists, a reset email has been sent.", "success");
+          showNotice("If that account exists, a password reset email has been sent.", "success");
         } else {
           const { data, error } = await state.client.auth.signInWithPassword({ email, password: String(form.get("password") || "") });
           if (error) throw error;
@@ -457,7 +465,73 @@
     const forgot = app.querySelector("#forgot-password");
     if (forgot) forgot.addEventListener("click", () => { state.authMode = "reset"; renderPublic(); });
 
+    app.querySelector("#signin-passkey")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (!state.client.auth.signInWithPasskey) {
+        showNotice("Passkeys need the latest Supabase JavaScript library (v2.105.0 or later) and must be enabled in Supabase Authentication settings.", "error");
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Waiting for passkey…";
+      try {
+        const { data, error } = await state.client.auth.signInWithPasskey();
+        if (error) throw error;
+        state.session = data.session;
+        state.user = data.user;
+        state.section = "dns";
+        await renderCurrentView();
+      } catch (error) {
+        showNotice(error?.message || "Passkey sign-in failed.", "error");
+      } finally {
+        const current = app.querySelector("#signin-passkey");
+        if (current) { current.disabled = false; current.textContent = "Sign in with a passkey"; }
+      }
+    });
+  }
 
+  function renderPasswordUpdate() {
+    app.innerHTML = `
+      <section class="auth-card password-recovery-card">
+        <div class="brand-mark brand-mark-small">${colorText("is-aroace")}</div>
+        <div class="accent-rule" aria-hidden="true"></div>
+        <div class="page-heading"><h1>Choose a new password</h1><p class="lede">Your reset link is verified. Set a new password for your account.</p></div>
+        <form id="password-update-form" class="form">
+          <div class="field"><label for="new-password">New password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="field"><label for="confirm-password">Confirm new password</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="actions"><button class="button button-primary" type="submit">Update password</button><button class="button button-quiet" id="recovery-cancel" type="button">Back to home</button></div>
+        </form>
+      </section>`;
+
+    app.querySelector("#password-update-form")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const password = String(form.get("password") || "");
+      const confirmation = String(form.get("confirmPassword") || "");
+      if (password.length < 8) return showNotice("Use at least 8 characters for your new password.", "error");
+      if (password !== confirmation) return showNotice("The passwords do not match.", "error");
+      const button = event.currentTarget.querySelector("button[type='submit']");
+      button.disabled = true;
+      button.textContent = "Updating…";
+      try {
+        const { error } = await state.client.auth.updateUser({ password });
+        if (error) throw error;
+        state.passwordRecovery = false;
+        state.authMode = "landing";
+        showNotice("Your password has been updated.", "success");
+        state.section = "dns";
+        await renderCurrentView();
+      } catch (error) {
+        showNotice(error?.message || "Could not update your password. Request a fresh reset link and try again.", "error");
+        const current = app.querySelector("#password-update-form button[type='submit']");
+        if (current) { current.disabled = false; current.textContent = "Update password"; }
+      }
+    });
+    app.querySelector("#recovery-cancel")?.addEventListener("click", async () => {
+      state.passwordRecovery = false;
+      state.authMode = "landing";
+      await state.client.auth.signOut({ scope: "local" });
+      renderPublic();
+    });
   }
 
   function renderPublicRequest() {
@@ -1275,44 +1349,217 @@
     if (!domains.some((item) => item.id === state.websiteRequestId)) state.websiteRequestId = domains[0].id;
     const selected = domains.find((item) => item.id === state.websiteRequestId);
     const fullDomain = `${selected.requested_label}.${rootDomain}`;
+    if (!document.querySelector("#website-ide-styles")) {
+      const style = document.createElement("style");
+      style.id = "website-ide-styles";
+      style.textContent = `
+        .website-ide {
+          --ide-bg: #0d1117;
+          --ide-panel: #111821;
+          --ide-panel-2: #161f2b;
+          --ide-border: #263241;
+          --ide-text: #d7e0ea;
+          --ide-muted: #8795a6;
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          min-height: calc(100vh - 132px);
+          overflow: hidden;
+          color: var(--ide-text);
+          background: var(--ide-bg);
+          border: 1px solid var(--ide-border);
+          border-radius: 12px;
+          box-shadow: 0 12px 36px rgba(0,0,0,.16);
+        }
+        .website-ide, .website-ide * { box-sizing: border-box; }
+        .website-ide-topbar {
+          position: relative;
+          z-index: 5;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 56px;
+          padding: 9px 14px;
+          background: var(--ide-panel);
+          border-bottom: 1px solid var(--ide-border);
+        }
+        .website-ide-domain-controls { display:flex; align-items:center; gap:9px; min-width:0; }
+        .website-ide-domain-controls select {
+          max-width: min(62vw, 360px);
+          min-width: 150px;
+          color: var(--ide-text);
+          background: var(--ide-panel-2);
+          border: 1px solid var(--ide-border);
+          border-radius: 7px;
+          padding: 8px 30px 8px 10px;
+        }
+        .website-ide .website-info-button {
+          width: 30px; height: 30px; min-width: 30px; padding: 0;
+          color: var(--ide-muted); border: 1px solid var(--ide-border);
+          background: transparent; border-radius: 7px;
+        }
+        .website-ide-open-site {
+          color: #a9c7ff !important;
+          border: 1px solid var(--ide-border) !important;
+          background: transparent !important;
+          white-space: nowrap;
+        }
+        .website-ide-menu { position:relative; margin-left:auto; }
+        .website-ide-menu > summary {
+          display:flex; align-items:center; justify-content:center;
+          width:36px; height:36px; border:1px solid var(--ide-border);
+          border-radius:8px; color:var(--ide-text); background:var(--ide-panel-2);
+          cursor:pointer; list-style:none; font-size:23px; line-height:1;
+          letter-spacing:1px; user-select:none;
+        }
+        .website-ide-menu > summary::-webkit-details-marker { display:none; }
+        .website-ide-menu[open] > summary,
+        .website-ide-menu > summary:hover { background:#202c3b; border-color:#40536a; }
+        .website-ide-menu-popover {
+          position:absolute; top:43px; right:0; z-index:20;
+          display:flex; flex-direction:column; gap:4px;
+          width:210px; padding:7px;
+          background:#151e29; border:1px solid #344255;
+          border-radius:10px; box-shadow:0 14px 38px rgba(0,0,0,.42);
+        }
+        .website-ide-menu-popover .button {
+          width:100%; justify-content:flex-start; text-align:left;
+          color:var(--ide-text) !important; background:transparent !important;
+          border:0 !important; border-radius:6px; padding:9px 10px;
+        }
+        .website-ide-menu-popover .button:hover:not(:disabled) { background:#243244 !important; }
+        .website-ide-menu-popover .button:disabled { opacity:.38; }
+        .website-ide-menu-popover .website-menu-divider {
+          height:1px; margin:4px 2px; background:var(--ide-border);
+        }
+        .website-ide-menu-popover .website-save-status {
+          padding:5px 10px; color:var(--ide-muted); font-size:12px;
+        }
+        .website-ide-menu-popover .website-save-status[data-error="true"] { color:#ff8c8c; }
+        .website-ide-workbench {
+          display:grid; grid-template-columns:230px minmax(0,1fr);
+          flex:1; min-height:560px; height:calc(100vh - 190px);
+          background:var(--ide-bg);
+        }
+        .website-ide .website-explorer {
+          min-width:0; overflow:auto; padding:0;
+          background:var(--ide-panel); border-right:1px solid var(--ide-border);
+        }
+        .website-ide .website-pane-heading {
+          position:sticky; top:0; z-index:1;
+          display:flex; justify-content:space-between; gap:8px;
+          padding:13px 14px 11px; color:#aebdce;
+          background:var(--ide-panel); border-bottom:1px solid var(--ide-border);
+          font-size:11px; font-weight:700; letter-spacing:.09em;
+        }
+        .website-ide .website-pane-heading .small { color:var(--ide-muted); font-weight:400; letter-spacing:0; }
+        .website-ide .website-file-tree { padding:8px 7px; }
+        .website-ide .website-file-row {
+          display:flex; align-items:center; gap:8px; width:100%;
+          min-height:31px; padding:5px 8px 5px calc(8px + var(--tree-depth)*13px);
+          color:#b9c6d5; background:transparent; border:0; border-radius:5px;
+          text-align:left; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          cursor:pointer;
+        }
+        .website-ide .website-file-row:hover { background:#1b2735; color:#eef5ff; }
+        .website-ide .website-file-row.is-selected { color:#fff; background:#203149; }
+        .website-ide .website-file-symbol { color:#8194aa; flex:none; }
+        .website-ide .website-empty-files { padding:8px; color:var(--ide-muted); }
+        .website-ide .website-code-area {
+          display:flex; flex-direction:column; min-width:0; min-height:0;
+          height:100%; background:var(--ide-bg);
+        }
+        .website-ide .website-open-tabs {
+          min-height:38px; background:#101720; border-bottom:1px solid var(--ide-border);
+        }
+        .website-ide .website-editor-wrap {
+          flex:1; min-height:480px; height:calc(100vh - 260px);
+          background:#0d1117; overflow:hidden;
+        }
+        .website-ide .website-monaco-editor { width:100%; height:100%; min-height:480px; }
+        .website-ide .website-editor-fallback {
+          width:100%; height:100%; min-height:480px; resize:none;
+          padding:16px; color:#d7e0ea; background:#0d1117;
+          border:0; outline:none; font:13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          tab-size:2;
+        }
+        .website-ide .website-editor-placeholder,
+        .website-ide .website-binary-note {
+          padding:28px; color:#a9b7c7; background:#0d1117;
+          font:13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        .website-ide .website-editor-placeholder { min-height:100%; }
+        .website-ide .website-binary-note p { color:var(--ide-muted); }
+        .website-ide .website-statusbar {
+          display:flex; justify-content:space-between; gap:12px;
+          min-height:27px; padding:5px 12px; color:#aebbd0;
+          background:#17283b; border-top:1px solid #263b54;
+          font:11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        .website-ide .website-preview-area { display:none !important; }
+        @media (max-width:700px) {
+          .website-ide { min-height:calc(100vh - 100px); border-radius:8px; }
+          .website-ide-workbench { grid-template-columns:112px minmax(0,1fr); height:calc(100vh - 170px); }
+          .website-ide .website-pane-heading { padding:11px 8px; font-size:10px; }
+          .website-ide .website-pane-heading .small { display:none; }
+          .website-ide .website-file-row { font-size:11px; overflow:hidden; }
+          .website-ide-domain-controls select { min-width:0; max-width:52vw; font-size:12px; }
+          .website-ide .website-editor-wrap { height:calc(100vh - 230px); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     app.innerHTML = `
-      <div class="website-toolbar website-toolbar-top">
-        <div class="website-domain-controls">
-          <select id="website-domain-select" aria-label="Select subdomain">${domains.map((item) => `<option value="${escapeHTML(item.id)}" ${item.id === selected.id ? "selected" : ""}>${escapeHTML(item.requested_label)}.${escapeHTML(rootDomain)}</option>`).join("")}</select>
-          <button class="button button-small button-quiet website-info-button" id="website-info" type="button" aria-label="Website editor information" title="What is this?">i</button>
-          <a class="button button-secondary button-small" href="https://${escapeHTML(fullDomain)}/" target="_blank" rel="noopener noreferrer" ${selected.website_published ? "" : "hidden"}>Open site ↗</a>
-        </div>
-      </div>
-      <div class="website-toolbar">
-        <div class="website-file-actions">
-          <button class="button button-small button-secondary" id="website-new-file" type="button">New file</button>
-          <button class="button button-small button-secondary" id="website-upload-file" type="button">Upload</button>
-          <button class="button button-small button-secondary" id="website-new-folder" type="button">New folder</button>
-          <button class="button button-small button-quiet" id="website-delete-entry" type="button" disabled>Delete</button>
+      <section class="website-ide">
+        <header class="website-ide-topbar">
+          <div class="website-ide-domain-controls">
+            <select id="website-domain-select" aria-label="Select subdomain">${domains.map((item) => `<option value="${escapeHTML(item.id)}" ${item.id === selected.id ? "selected" : ""}>${escapeHTML(item.requested_label)}.${escapeHTML(rootDomain)}</option>`).join("")}</select>
+            <button class="button button-small button-quiet website-info-button" id="website-info" type="button" aria-label="Website editor information" title="What is this?">i</button>
+            <a class="button button-secondary button-small website-ide-open-site" href="https://${escapeHTML(fullDomain)}/" target="_blank" rel="noopener noreferrer" ${selected.website_published ? "" : "hidden"}>Open site ↗</a>
+          </div>
+          <details class="website-ide-menu">
+            <summary aria-label="Website actions" title="Website actions">⋮</summary>
+            <div class="website-ide-menu-popover">
+              <button class="button button-small" id="website-new-file" type="button">＋ New file</button>
+              <button class="button button-small" id="website-upload-file" type="button">↑ Upload file</button>
+              <button class="button button-small" id="website-new-folder" type="button">＋ New folder</button>
+              <button class="button button-small" id="website-delete-entry" type="button" disabled>⌫ Delete selected</button>
+              <div class="website-menu-divider"></div>
+              <span id="website-save-status" class="website-save-status">Saved</span>
+              <button class="button button-small" id="website-save" type="button">Save changes</button>
+              <button class="button button-small ${selected.website_published ? "button-danger" : "button-primary"}" id="website-publish" type="button">${selected.website_published ? "Unpublish site" : "Publish site"}</button>
+              <button class="button button-small" id="website-refresh-preview" type="button">Refresh preview</button>
+            </div>
+          </details>
           <input id="website-upload-input" type="file" hidden>
+        </header>
+        <div class="website-ide-workbench">
+          <aside class="website-explorer">
+            <div class="website-pane-heading"><span>EXPLORER</span><span class="small">${state.websiteEntries.length} items</span></div>
+            <div id="website-file-tree" class="website-file-tree"><p class="small">Loading files…</p></div>
+          </aside>
+          <section class="website-code-area">
+            <div id="website-open-tabs" class="website-open-tabs"></div>
+            <div id="website-editor-wrap" class="website-editor-wrap"><div class="website-editor-placeholder">Loading your files…</div></div>
+            <div class="website-statusbar"><span>${escapeHTML(fullDomain)}</span><span id="website-language-status">HTML</span></div>
+          </section>
+          <section class="website-preview-area" aria-hidden="true">
+            <iframe id="website-preview-frame" title="Website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:Arial;padding:24px'>Loading preview…</p>"></iframe>
+          </section>
         </div>
-        <div class="website-publish-actions">
-          <span id="website-save-status" class="website-save-status">Saved</span>
-          <button class="button button-small button-secondary" id="website-save" type="button">Save</button>
-          <button class="button button-small ${selected.website_published ? "button-danger" : "button-primary"}" id="website-publish" type="button">${selected.website_published ? "Unpublish" : "Publish"}</button>
-        </div>
-      </div>
-      <div class="website-workbench">
-        <aside class="website-explorer">
-          <div class="website-pane-heading"><span>EXPLORER</span><span class="small">${state.websiteEntries.length} items</span></div>
-          <div id="website-file-tree" class="website-file-tree"><p class="small">Loading files…</p></div>
-        </aside>
-        <section class="website-code-area">
-          <div id="website-open-tabs" class="website-open-tabs"></div>
-          <div id="website-editor-wrap" class="website-editor-wrap"><div class="website-editor-placeholder">Loading your files…</div></div>
-          <div class="website-statusbar"><span>${escapeHTML(fullDomain)}</span><span id="website-language-status">HTML</span></div>
-        </section>
-        <section class="website-preview-area">
-          <div class="website-preview-heading"><strong>Preview</strong><button class="text-button" id="website-refresh-preview" type="button">Refresh</button></div>
-          <iframe id="website-preview-frame" title="Website preview" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" srcdoc="<!doctype html><p style='font-family:Arial;padding:24px'>Loading preview…</p>"></iframe>
-        </section>
-      </div>
+      </section>
     `;
+
+    app.querySelector(".website-ide-menu")?.addEventListener("click", (event) => {
+      if (event.target.closest("button")) {
+        queueMicrotask(() => {
+          const menu = app.querySelector(".website-ide-menu");
+          if (menu) menu.open = false;
+        });
+      }
+    });
 
     app.querySelector("#website-info")?.addEventListener("click", () => {
       const popup = document.createElement("dialog");
@@ -1494,6 +1741,8 @@
     const pending = mine.filter((item) => item.status === "pending");
     app.innerHTML = `
       <div class="page-heading"><h1>Account</h1><p class="lede">Request new subdomains, manage your assignments, and control your account.</p></div>
+      <section class="section panel-section" id="passkey-security-section"><div class="section-header-row"><div><h2>Passkeys</h2><p class="small">Sign in securely with your device, a PIN, or a password manager instead of typing your password.</p></div><button class="button button-primary button-small" id="add-passkey" type="button">Add passkey</button></div><div id="passkey-list" class="request-list"><p class="small">Loading saved passkeys…</p></div></section>
+      <hr class="rule">
       <section class="section panel-section"><h2>Request another subdomain</h2><p class="lede">Requests are reviewed by an administrator. A preview link is optional and may help reviewers understand your project.</p>
         <form id="request-domain-form" class="form">
           <div class="field"><label for="more-domain">Desired subdomain</label><div class="form-domain-row"><input id="more-domain" name="domain" required maxlength="63" placeholder="yourname"><span class="domain-suffix">.${escapeHTML(rootDomain)}</span></div></div>
@@ -1511,6 +1760,75 @@
       <section class="section panel-section"><h2>Delete account</h2><p class="lede">This permanently deletes your app account, requests, and DNS records for your assigned subdomains. The parent domain and Supabase project remain.</p><button class="button button-danger" id="delete-account">Delete my account</button></section>
       <hr class="rule">
       <section class="section panel-section"><h2>Sign out</h2><p class="small">Sign out without deleting your account or domains.</p><button class="button button-secondary" id="account-sign-out">Sign out</button></section>`;
+
+    const passkeyList = app.querySelector("#passkey-list");
+    const passkeyApi = state.client.auth.passkey;
+    async function refreshPasskeys() {
+      if (!passkeyApi?.list) {
+        if (passkeyList) passkeyList.innerHTML = `<p class="small">Passkeys require Supabase JavaScript v2.105.0 or later and the Passkeys feature enabled in your Supabase project.</p>`;
+        return;
+      }
+      const { data, error } = await passkeyApi.list();
+      if (error) throw error;
+      const passkeys = Array.isArray(data) ? data : [];
+      if (!passkeyList) return;
+      passkeyList.innerHTML = passkeys.length ? passkeys.map((item) => `
+        <article class="request-mini passkey-item">
+          <div class="domain-card-heading"><strong>${escapeHTML(item.friendly_name || "Passkey")}</strong><span class="status status-approved">Saved</span></div>
+          <p class="small">Added ${dateText(item.created_at)}${item.last_used_at ? ` · Last used ${dateText(item.last_used_at)}` : ""}</p>
+          <div class="actions"><button class="button button-secondary button-small" type="button" data-rename-passkey="${escapeHTML(item.id)}">Rename</button><button class="button button-danger button-small" type="button" data-delete-passkey="${escapeHTML(item.id)}">Remove</button></div>
+        </article>`).join("") : `<p class="small">No passkeys have been added to this account yet.</p>`;
+      passkeyList.querySelectorAll("[data-rename-passkey]").forEach((button) => button.addEventListener("click", async () => {
+        const passkeyId = button.dataset.renamePasskey;
+        const current = passkeys.find((item) => item.id === passkeyId);
+        const friendlyName = window.prompt("Name this passkey (for example, Personal laptop):", current?.friendly_name || "");
+        if (friendlyName === null) return;
+        const name = friendlyName.trim();
+        if (!name || name.length > 120) return showNotice("Enter a name between 1 and 120 characters.", "error");
+        button.disabled = true;
+        try {
+          const { error } = await passkeyApi.update({ passkeyId, friendlyName: name });
+          if (error) throw error;
+          await refreshPasskeys();
+          showNotice("Passkey renamed.", "success");
+        } catch (error) { showNotice(error.message || "Could not rename this passkey.", "error"); button.disabled = false; }
+      }));
+      passkeyList.querySelectorAll("[data-delete-passkey]").forEach((button) => button.addEventListener("click", async () => {
+        const passkeyId = button.dataset.deletePasskey;
+        if (!window.confirm("Remove this passkey from your account? You will no longer be able to use it to sign in.")) return;
+        button.disabled = true;
+        try {
+          const { error } = await passkeyApi.delete({ passkeyId });
+          if (error) throw error;
+          await refreshPasskeys();
+          showNotice("Passkey removed.", "success");
+        } catch (error) { showNotice(error.message || "Could not remove this passkey.", "error"); button.disabled = false; }
+      }));
+    }
+
+    refreshPasskeys().catch((error) => {
+      if (passkeyList) passkeyList.innerHTML = `<p class="small">Could not load passkeys: ${escapeHTML(error.message || "Unknown error")}</p>`;
+    });
+    app.querySelector("#add-passkey")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (!state.client.auth.registerPasskey) {
+        showNotice("Passkeys require Supabase JavaScript v2.105.0 or later and must be enabled in Supabase Authentication → Passkeys.", "error");
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Follow your device prompt…";
+      try {
+        const { error } = await state.client.auth.registerPasskey();
+        if (error) throw error;
+        await refreshPasskeys();
+        showNotice("Passkey added to your account.", "success");
+      } catch (error) {
+        showNotice(error?.message || "Could not add a passkey.", "error");
+      } finally {
+        const current = app.querySelector("#add-passkey");
+        if (current) { current.disabled = false; current.textContent = "Add passkey"; }
+      }
+    });
 
     const moreDomainInput = app.querySelector("#more-domain");
     if (moreDomainInput && state.prefillLabel) {
@@ -1800,12 +2118,19 @@
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        experimental: { passkey: true }
       }
     });
     state.client.auth.onAuthStateChange((event, session) => {
       state.session = session;
       state.user = session?.user || null;
+      if (event === "PASSWORD_RECOVERY") {
+        state.passwordRecovery = true;
+        state.authMode = "password-update";
+        setTimeout(() => renderPublic(), 0);
+        return;
+      }
       if (!state.user) {
         if (event === "SIGNED_OUT") state.authMode = "landing";
         if (state.notificationPoll) clearInterval(state.notificationPoll);
@@ -1822,7 +2147,8 @@
     if (error) { showNotice(error.message, "error"); renderPublic(); return; }
     state.session = data.session;
     state.user = data.session?.user || null;
-    if (state.user) await renderCurrentView(); else renderPublic();
+    if (state.passwordRecovery || state.authMode === "password-update") renderPublic();
+    else if (state.user) await renderCurrentView(); else renderPublic();
   }
 
   start();
